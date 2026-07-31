@@ -1,6 +1,6 @@
 # Phreddit
 
-[![CI](https://github.com/rish-rm/phreddit/actions/workflows/ci.yml/badge.svg)](https://github.com/rish-rm/phreddit/actions/workflows/ci.yml)
+[![CI](https://github.com/rishrm/phreddit/actions/workflows/ci.yml/badge.svg)](https://github.com/rishrm/phreddit/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Phreddit is a full-stack Reddit-inspired community forum built with React, Express, MongoDB, and Mongoose. It supports guest browsing, session-based accounts, communities, posts, link flair, unbounded-depth threaded comments, saved posts, toggleable reputation-aware voting, live post updates over WebSockets, Markdown rendering, public user profiles, reporting, and admin moderation flows.
