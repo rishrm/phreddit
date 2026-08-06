@@ -14,24 +14,24 @@
     "test:unit": "vitest run"
   },
   "dependencies": {
-    "dompurify": "^3.4.12",
-    "marked": "^18.0.5",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-router-dom": "^7.18.1",
+    "dompurify": "^3.4.13",
+    "marked": "^18.0.7",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router-dom": "^7.18.2",
     "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.42.1",
+    "@playwright/test": "^1.62.1",
     "@testing-library/react": "^16.3.2",
-    "@vitejs/plugin-react": "^6.0.2",
-    "eslint": "^10.4.0",
+    "@vitejs/plugin-react": "^6.0.5",
+    "eslint": "^10.8.0",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.2",
-    "globals": "^17.6.0",
-    "jsdom": "^29.1.1",
-    "vite": "^8.1.5",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "globals": "^17.9.0",
+    "jsdom": "^30.0.1",
+    "vite": "^8.2.0",
     "vitest": "^4.1.10"
   }
 }
