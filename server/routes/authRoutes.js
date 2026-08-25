@@ -66,7 +66,7 @@ router.post("/login", authRateLimiter, async (req, res, next) => {
     const email = String(req.body.email || "").trim().toLowerCase();
     const password = String(req.body.password || "");
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email }).select("+passwordHash");
     if (!user) {
       return res.status(401).json({
         error: "Invalid email or password."

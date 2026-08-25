@@ -1,4 +1,7 @@
 import { test, expect } from "@playwright/test";
+import { resetE2eDatabase } from "./helpers.js";
+
+test.beforeEach(async ({ request }) => resetE2eDatabase(request));
 
 test("user can register, log in, and create a community", async ({ page }) => {
   const stamp = Date.now();

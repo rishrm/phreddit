@@ -1,4 +1,14 @@
 import { useEffect, useState } from "react";
+import {
+  Home,
+  LogIn,
+  LogOut,
+  MessageCircle,
+  Plus,
+  Search,
+  UserRound,
+  UserRoundPlus
+} from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 export default function Banner({ user, onLogout }) {
@@ -28,26 +38,60 @@ export default function Banner({ user, onLogout }) {
 
   return (
     <header className="banner">
-      <button onClick={() => navigate(user ? "/home" : "/")}>phreddit</button>
-      <button onClick={() => navigate("/home")}>Home</button>
-      <input
-        type="text"
-        className="banner-search"
-        aria-label="Search Phreddit"
-        placeholder="Search Phreddit..."
-        value={searchValue}
-        onChange={(event) => setSearchValue(event.target.value)}
-        onKeyDown={handleSearchKey}
-      />
-      <button disabled={!user} onClick={() => user && navigate("/posts/new")}>
-        Create Post
+      <button
+        className="brand-button"
+        onClick={() => navigate(user ? "/home" : "/")}
+        aria-label="Phreddit home"
+      >
+        <span className="brand-mark" aria-hidden="true"><MessageCircle size={19} /></span>
+        <span>phreddit</span>
       </button>
-      <button disabled={!user} onClick={() => user && navigate("/profile")}>
-        {user ? user.displayName : "Guest"}
+      <button className="nav-button banner-home" onClick={() => navigate("/home")}>
+        <Home size={17} aria-hidden="true" />
+        <span>Home</span>
       </button>
-      {!user && <button onClick={() => navigate("/login")}>Login</button>}
-      {!user && <button onClick={() => navigate("/register")}>Register</button>}
-      {user && <button onClick={onLogout}>Logout</button>}
+      <div className="search-wrap">
+        <Search size={18} aria-hidden="true" />
+        <input
+          type="search"
+          className="banner-search"
+          aria-label="Search Phreddit"
+          placeholder="Search posts, comments, and communities"
+          maxLength={200}
+          value={searchValue}
+          onChange={(event) => setSearchValue(event.target.value)}
+          onKeyDown={handleSearchKey}
+        />
+      </div>
+      {user && (
+        <button className="primary nav-button" onClick={() => navigate("/posts/new")}>
+          <Plus size={17} aria-hidden="true" />
+          <span>Create Post</span>
+        </button>
+      )}
+      {user && (
+        <button className="nav-button profile-button" onClick={() => navigate("/profile")}>
+          <UserRound size={17} aria-hidden="true" />
+          <span>{user.displayName}</span>
+        </button>
+      )}
+      {!user && (
+        <button className="nav-button" onClick={() => navigate("/login")}>
+          <LogIn size={17} aria-hidden="true" />
+          <span>Login</span>
+        </button>
+      )}
+      {!user && (
+        <button className="primary nav-button" onClick={() => navigate("/register")}>
+          <UserRoundPlus size={17} aria-hidden="true" />
+          <span>Register</span>
+        </button>
+      )}
+      {user && (
+        <button className="icon-button" onClick={onLogout} aria-label="Logout" title="Logout">
+          <LogOut size={18} aria-hidden="true" />
+        </button>
+      )}
     </header>
   );
 }

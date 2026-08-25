@@ -168,6 +168,9 @@ export function createApp({ useSessionStore = true } = {}) {
     } else if (error.code === 11000) {
       status = 409;
       message = "That value is already in use.";
+    } else if (error.type === "entity.parse.failed") {
+      status = 400;
+      message = "Request body must contain valid JSON.";
     }
 
     if (status >= 500) {
@@ -222,8 +225,12 @@ export async function startServer() {
       if (typeof postId !== "string" || !mongoose.isValidObjectId(postId)) return;
       const postRooms = [...socket.rooms].filter((room) => room.startsWith("post:"));
       if (postRooms.length >= MAX_POST_ROOMS_PER_SOCKET) return;
-      if (!(await Post.exists({ _id: postId }))) return;
-      await socket.join(`post:${postId}`);
+      try {
+        if (!(await Post.exists({ _id: postId }))) return;
+        await socket.join(`post:${postId}`);
+      } catch {
+        // A failed room lookup should not terminate the socket process.
+      }
     });
     socket.on("post:leave", (postId) => {
       if (typeof postId === "string" && mongoose.isValidObjectId(postId)) {

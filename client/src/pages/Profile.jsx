@@ -287,7 +287,7 @@ export default function Profile() {
             <label>Content<textarea name="content" defaultValue={editing.item.content} required maxLength={500} /></label>
           )}
           <div className="row-card-actions">
-            <button type="submit">Save</button>
+            <button className="primary" type="submit">Save</button>
             <button type="button" onClick={() => setEditing(null)}>Cancel</button>
           </div>
         </form>
@@ -404,7 +404,7 @@ export default function Profile() {
                   <span className="row-card-subtitle">{listedUser.email} | Rep: {listedUser.reputation}</span>
                 </div>
                 <div className="row-card-actions">
-                  <button onClick={() => navigate(`/profile/${listedUser._id}`)}>Act as user</button>
+                  <button onClick={() => navigate(`/profile/${listedUser._id}`)}>Manage content</button>
                   <button className="danger" onClick={() => requestDeleteUser(listedUser)}>Delete</button>
                 </div>
               </div>

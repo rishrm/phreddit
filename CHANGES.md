@@ -6,19 +6,22 @@
 - Password length of 8-128 characters (server-validated, enforced in the UI).
 - `helmet` security headers; CORS allowlist unchanged; `trust proxy` configurable for hosted deployments.
 - `votedBy` lists are not exposed by any API surface, including profile content; responses include only the caller's own `userVote`.
+- Password hashes are excluded by default by the Mongoose schema and selected explicitly only during login.
+- Production administrator promotion moved to a guarded explicit script; startup only verifies the configured administrator.
 
 ## Backend
 - **Voting overhaul:** vote / unvote (toggle) / switch with atomic conditional updates; self-voting blocked; reputation deltas apply and reverse correctly (+5/-10 and ±15 on switch).
 - **Pagination + server-side sorting** on `GET /api/posts` (`page`, `limit`, `sort=newest|oldest|active`); Active uses the latest comment across multiple threads and joined-community priority is applied before pagination.
 - **Full-text search** now uses the existing MongoDB text indexes on posts and comments (previously unindexed regex scans).
-- **Flat comment fetching:** `GET /api/posts/:id` loads comments in one indexed query and builds the tree in memory — thread depth is now unbounded (was silently truncated at depth 4).
+- **Flat comment fetching:** `GET /api/posts/:id` loads up to 5,000 comments in one indexed query and builds the tree iteratively — nesting depth is no longer silently truncated at depth 4.
 - **View counting** moved to `POST /api/posts/:id/view`; `GET` is idempotent.
 - **Realtime:** Socket.IO server with `post:<id>` rooms; comment/vote/edit/delete/moderation actions emit `post:updated`.
 - **Public profiles:** `GET /api/users/:id/public` (display name, reputation, recent activity; no email).
 - Community detail endpoint slimmed (posts now come from the paginated listing); removed duplicate `GET /users/me`; Mongoose `ValidationError` → 400; new compound indexes on posts and comments.
 - Cascade user deletion reverses the deleted voter's reputation impact before removing vote records.
 - Community/comment/flair length limits, Markdown link rules, and link-flair existence are enforced by the API.
-- Benchmark tooling: `bench/seed.js` + `bench/run.js` (autocannon).
+- Replica-set deployments use MongoDB transactions for multi-document writes; CI forces this path while local standalone MongoDB retains an idempotent fallback.
+- Benchmark tooling: guarded `bench/seed.js` plus a dependency-free concurrent HTTP runner with req/s and percentile output.
 
 ## Frontend
 - **react-router-dom migration:** real URLs and deep links for home, search (`?q=`), communities, posts, public users, and profile; 404 page; redirect-aware auth pages.
@@ -35,12 +38,13 @@
 ## Testing & CI
 - Integration regression coverage includes registration/login, authorization negatives, vote math, multi-thread Active sorting, cross-page membership ordering, profile privacy, and cascade reputation repair.
 - Client unit tests (Vitest + React Testing Library) cover utilities, sorting semantics, listing excerpts, and dialog keyboard behavior.
-- Playwright specs follow the assignment's register → login flow and dedicated New Comment page.
-- GitHub Actions CI: lint + unit + build, integration tests against a MongoDB service container, and a Playwright e2e job.
+- Playwright covers the assignment register/login flow, dedicated New Comment page, two-user vote lifecycle, two-browser realtime invalidation, and mobile keyboard/overflow behavior.
+- GitHub Actions CI: dependency audits, lint + unit + build, and integration/e2e jobs against a MongoDB replica set with diagnostics uploaded on browser failures.
+- CodeQL scans JavaScript data flows on pull requests, protected-branch pushes, and a weekly schedule using the `security-extended` query suite.
 
 ## Deployment & Docs
-- `render.yaml` blueprint for the API; `vercel.json` verified for SPA deep links; env examples updated (`TRUST_PROXY`, prod cookie settings, `VITE_API_BASE_URL`).
+- `render.yaml` blueprint for the API; `vercel.json` handles SPA deep links and a same-origin REST proxy while `VITE_SOCKET_URL` keeps realtime connected directly to Render.
 - README, API contract, security policy, MIT license, Dependabot configuration, and agent invariants are aligned with the release.
 
 ## Intentionally deferred (documented as future work)
-TypeScript migration, cursor-based pagination, Redis-backed rate limiting, multi-document transactions (Atlas), image uploads.
+TypeScript migration, cursor-based pagination, distributed rate limiting, and managed image uploads.

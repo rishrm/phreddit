@@ -1,6 +1,9 @@
 import { io } from "socket.io-client";
 
 function socketBaseUrl() {
+  const explicitSocketUrl = import.meta.env.VITE_SOCKET_URL;
+  if (explicitSocketUrl) return explicitSocketUrl.replace(/\/+$/, "");
+
   const apiBase = import.meta.env.VITE_API_BASE_URL;
   if (!apiBase) return undefined; // same origin; Vite proxies /socket.io in dev
   try {

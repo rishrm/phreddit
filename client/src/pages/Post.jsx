@@ -246,7 +246,7 @@ export default function Post() {
           <textarea
             id="reportDetails"
             maxLength={400}
-            placeholder="Optional context for moderators"
+            placeholder="Optional context for administrators"
             value={reportForm.details}
             onChange={(event) => setReportForm({ ...reportForm, details: event.target.value })}
           />
@@ -281,7 +281,7 @@ export default function Post() {
         </div>
       </div>
       {user && (
-        <button type="button" onClick={() => navigate(`/posts/${postId}/comments/new`)}>
+        <button className="primary" type="button" onClick={() => navigate(`/posts/${postId}/comments/new`)}>
           Add a comment
         </button>
       )}

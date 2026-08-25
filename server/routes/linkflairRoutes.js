@@ -7,7 +7,7 @@ const router = express.Router();
 
 router.get("/", async (_req, res, next) => {
   try {
-    const linkFlairs = await LinkFlair.find({}).sort({ content: 1 });
+    const linkFlairs = await LinkFlair.find({}).sort({ content: 1 }).limit(500);
     res.json({ linkFlairs });
   } catch (error) {
     next(error);

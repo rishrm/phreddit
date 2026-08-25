@@ -77,7 +77,7 @@ router.post("/posts/:postId", requireLogin, async (req, res, next) => {
       return res.status(404).json({ error: "Post not found." });
     }
 
-    if (String(post.postedBy) === String(req.currentUser._id)) {
+    if (String(post.postedBy?._id || post.postedBy) === String(req.currentUser._id)) {
       return res.status(400).json({ error: "You cannot report your own post." });
     }
 
@@ -108,7 +108,7 @@ router.post("/posts/:postId", requireLogin, async (req, res, next) => {
     });
 
     return res.status(201).json({
-      message: "Report submitted for moderator review.",
+      message: "Report submitted for administrator review.",
       report
     });
   } catch (error) {

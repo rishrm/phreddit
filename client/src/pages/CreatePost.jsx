@@ -57,7 +57,7 @@ export default function CreatePost() {
 
   if (!user) {
     return (
-      <main className="card">
+      <main className="card form-page">
         <h1>Create Post</h1>
         <p>You must be logged in to create posts.</p>
         <button onClick={() => navigate("/home")}>Back Home</button>
@@ -109,7 +109,7 @@ export default function CreatePost() {
   }
 
   return (
-    <main className="card" aria-label="Create Post Page">
+    <main className="card form-page" aria-label="Create Post Page">
       <h1>Create Post</h1>
       {loadError && (
         <p className="error-state" role="alert">
@@ -177,6 +177,7 @@ export default function CreatePost() {
         />
         <div className="action-row">
           <button
+            className="primary"
             type="submit"
             disabled={loadingOptions || communities.length === 0 || submitting}
           >

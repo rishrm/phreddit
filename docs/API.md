@@ -13,8 +13,9 @@ smaller, path-specific authentication budget.
 
 In production, `POST`, `PUT`, `PATCH`, and `DELETE` requests must include an
 `Origin` matching `CLIENT_ORIGIN` or the API's own origin. Missing or untrusted
-origins return `403`. This protects the cross-site `SameSite=None` session
-cookie from form-based CSRF; local and test environments leave the guard off.
+origins return `403`. The Vercel deployment proxies REST calls through
+same-origin `/api` and uses `SameSite=Lax`; the origin check remains a second
+CSRF boundary. Local and test environments leave the guard off.
 
 ## Authentication
 
@@ -43,7 +44,8 @@ cookie from form-based CSRF; local and test environments leave the guard off.
 | Method | Endpoint | Access | Purpose |
 |---|---|---|---|
 | GET | `/posts` | Public | Paginated listing/search/filter/sort |
-| GET | `/posts/:id` | Public | Post plus an unbounded comment tree |
+| GET | `/posts/:id/summary` | Public | Lightweight post id/title for creation forms |
+| GET | `/posts/:id` | Public | Post plus an arbitrary-depth comment tree |
 | POST | `/posts/:id/view` | Public | Atomically increment views |
 | POST | `/posts` | User | Create a post |
 | PUT/DELETE | `/posts/:id` | Owner/Admin | Edit or cascade-delete |
@@ -55,7 +57,10 @@ cookie from form-based CSRF; local and test environments leave the guard off.
 `GET /posts` accepts `page`, `limit`, `sort=newest|oldest|active`, `community`,
 `linkFlair`, and `search`. Authenticated feeds prioritize joined communities
 before applying page boundaries. Vote histories are never serialized; responses
-contain only `userVote` for the caller.
+contain only `userVote` for the caller. Search resolves at most 5,000 matching
+post ids and returns `searchTruncated=true` if more exist. Detailed post
+responses include at most 5,000 comments and return `commentsTruncated=true`
+when the guard is reached.
 
 ## Profiles and Moderation
 
@@ -68,8 +73,13 @@ contain only `userVote` for the caller.
 | POST/DELETE | `/users/me/saved-posts/:postId` | User | Save or unsave a post |
 | POST | `/reports/posts/:postId` | User | Report a post once while pending |
 | GET | `/reports` | Admin | Moderation queue |
-| POST | `/reports/:id/resolve` | Admin | Dismiss or remove reported content |
+| POST | `/reports/:id/resolve` | Admin | Atomically claim, dismiss, or remove reported content |
 
 State-changing post/comment operations emit `post:updated` to the corresponding
 Socket.IO `post:<id>` room. The client treats these events as invalidations and
 refetches authoritative API state.
+
+Reports preserve a bounded content/author/community snapshot when submitted so
+administrators retain review evidence if live references later disappear. A
+pending report is moved through a short `processing` claim state so concurrent
+administrators cannot resolve it twice.

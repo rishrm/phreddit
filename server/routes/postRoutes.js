@@ -262,6 +262,18 @@ router.get("/", async (req, res, next) => {
   }
 });
 
+router.get("/:id/summary", async (req, res, next) => {
+  try {
+    const post = await Post.findById(req.params.id).select("title").lean();
+    if (!post) {
+      return res.status(404).json({ error: "Post not found." });
+    }
+    return res.json({ post });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/:id", async (req, res, next) => {
   try {
     const post = await Post.findById(req.params.id)
@@ -278,8 +290,8 @@ router.get("/:id", async (req, res, next) => {
     const currentUserId = req.currentUser?._id || null;
 
     // Comments are fetched flat in one indexed query and assembled into a
-    // tree in memory, so thread depth is unbounded (the previous nested
-    // populate silently truncated replies beyond a fixed depth).
+    // tree in memory, so nesting depth is not recursively truncated. The
+    // response cap bounds memory for pathological threads.
     const comments = await Comment.find({ post: post._id })
       .populate("commentedBy", "displayName reputation")
       .sort({ createdAt: 1, _id: 1 })
@@ -398,18 +410,16 @@ router.post("/", requireLogin, async (req, res, next) => {
         sessionOptions(session)
       );
 
-      const [communityUpdate, userUpdate] = await Promise.all([
-        Community.updateOne(
-          { _id: community._id },
-          { $addToSet: { posts: createdPost._id } },
-          sessionOptions(session)
-        ),
-        User.updateOne(
-          { _id: req.currentUser._id },
-          { $addToSet: { createdPosts: createdPost._id } },
-          sessionOptions(session)
-        )
-      ]);
+      const communityUpdate = await Community.updateOne(
+        { _id: community._id },
+        { $addToSet: { posts: createdPost._id } },
+        sessionOptions(session)
+      );
+      const userUpdate = await User.updateOne(
+        { _id: req.currentUser._id },
+        { $addToSet: { createdPosts: createdPost._id } },
+        sessionOptions(session)
+      );
       if (communityUpdate.matchedCount !== 1 || userUpdate.matchedCount !== 1) {
         throw new Error("Post references could not be updated.");
       }

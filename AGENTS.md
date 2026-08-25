@@ -22,6 +22,8 @@ Integration tests create a disposable database per test file (see
 `server/tests/testHelpers.js`); they are safe to run repeatedly. Playwright
 uses `E2E_MONGO_URI` (defaults to a local `phreddit_e2e` database) and starts
 both servers via `client/playwright.config.js` — do not start them manually.
+CI runs MongoDB as a replica set and sets `FORCE_TRANSACTIONS=true`; use the
+same mode when changing multi-document behavior.
 
 ## Definition of done
 
@@ -42,7 +44,9 @@ also `npm run test:e2e`, and update the specs in `client/e2e/` if flows moved.
   deletes, moderation removals) must call `emitPostUpdated(postId)` from
   `server/realtime.js`. It is a no-op in tests by design.
 - `GET /api/posts/:id` fetches comments FLAT in one query and builds the tree
-  in memory. Do not reintroduce nested `populate` (it depth-truncates).
+  iteratively in memory. Do not reintroduce nested `populate` (it
+  depth-truncates). Preserve the 5,000-comment response guard and
+  `commentsTruncated` signal.
 - View counts increment only via `POST /api/posts/:id/view`. GETs stay
   idempotent.
 - The `x-test-user-id` header is honored ONLY when `NODE_ENV === "test"`
@@ -50,12 +54,20 @@ also `npm run test:e2e`, and update the specs in `client/e2e/` if flows moved.
   bypass once already.
 - Regenerate the session on login. Registration intentionally returns to the
   Welcome page without creating a session, matching the assignment flow.
+- `User.passwordHash` is `select: false`. Only authentication may explicitly
+  request it with `.select("+passwordHash")`; never return it from an API.
 - Keep the global API limiter and production trusted-origin guard mounted
   before `/api` routes. Cross-site session cookies require both controls;
   unsafe production requests without an allowed `Origin` must stay blocked.
 - Mongo gotchas already handled in `server/routes/postRoutes.js` — keep them:
   `$text` cannot live inside `$or` (resolve matching ids first), and
   aggregation pipelines do NOT auto-cast string ids (use `toObjectId()`).
+- Multi-document mutations use `runAtomic()`. Operations inside one MongoDB
+  transaction/session must be awaited serially; do not use `Promise.all` with
+  the same session.
+- `server/init.js`, `bench/seed.js`, and `admin:promote` are intentionally
+  guarded destructive/privilege scripts. Do not weaken their confirmation
+  environment variables.
 
 **Client**
 - Navigation is react-router URLs (`/posts/:id`, `/communities/:id`,
@@ -68,6 +80,8 @@ also `npm run test:e2e`, and update the specs in `client/e2e/` if flows moved.
   `window.confirm` (Playwright asserts against the dialog).
 - Vote buttons reflect `userVote` (`aria-pressed`, `.active`), and are
   disabled on own content and below 50 reputation.
+- Vercel production REST calls stay on same-origin `/api` via `vercel.json`;
+  Socket.IO uses `VITE_SOCKET_URL` because it connects directly to Render.
 
 ## Test-writing notes
 
@@ -81,6 +95,8 @@ also `npm run test:e2e`, and update the specs in `client/e2e/` if flows moved.
   creating a post returns Home while a new community opens its page; post titles are
   LINKS not buttons, and authors cannot vote on their own posts — use a second
   user to test voting.
+- Every e2e test resets only a database whose name begins with
+  `phreddit_e2e`; never loosen the reset route or teardown name check.
 
 ## Style
 

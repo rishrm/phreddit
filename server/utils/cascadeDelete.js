@@ -59,23 +59,21 @@ async function deleteCommentsByIds(commentIds, session) {
   const postIds = uniqueObjectIds(comments.map((comment) => comment.post));
   const options = sessionOptions(session);
 
-  await Promise.all([
-    Comment.updateMany(
-      { replies: { $in: existingIds } },
-      { $pull: { replies: { $in: existingIds } } },
-      options
-    ),
-    Post.updateMany(
-      { comments: { $in: existingIds } },
-      { $pull: { comments: { $in: existingIds } } },
-      options
-    ),
-    User.updateMany(
-      { createdComments: { $in: existingIds } },
-      { $pull: { createdComments: { $in: existingIds } } },
-      options
-    )
-  ]);
+  await Comment.updateMany(
+    { replies: { $in: existingIds } },
+    { $pull: { replies: { $in: existingIds } } },
+    options
+  );
+  await Post.updateMany(
+    { comments: { $in: existingIds } },
+    { $pull: { comments: { $in: existingIds } } },
+    options
+  );
+  await User.updateMany(
+    { createdComments: { $in: existingIds } },
+    { $pull: { createdComments: { $in: existingIds } } },
+    options
+  );
 
   await Comment.deleteMany({ _id: { $in: existingIds } }, options);
   return postIds;
@@ -128,26 +126,24 @@ export async function deletePostsInSession(
   const touchedPostIds = await deleteCommentsByIds(allCommentIds, session);
   const options = sessionOptions(session);
 
-  await Promise.all([
-    Community.updateMany(
-      { posts: { $in: existingPostIds } },
-      { $pull: { posts: { $in: existingPostIds } } },
-      options
-    ),
-    User.updateMany(
-      { createdPosts: { $in: existingPostIds } },
-      { $pull: { createdPosts: { $in: existingPostIds } } },
-      options
-    ),
-    User.updateMany(
-      { savedPosts: { $in: existingPostIds } },
-      { $pull: { savedPosts: { $in: existingPostIds } } },
-      options
-    ),
-    deleteReports
-      ? Report.deleteMany({ targetPost: { $in: existingPostIds } }, options)
-      : Promise.resolve()
-  ]);
+  await Community.updateMany(
+    { posts: { $in: existingPostIds } },
+    { $pull: { posts: { $in: existingPostIds } } },
+    options
+  );
+  await User.updateMany(
+    { createdPosts: { $in: existingPostIds } },
+    { $pull: { createdPosts: { $in: existingPostIds } } },
+    options
+  );
+  await User.updateMany(
+    { savedPosts: { $in: existingPostIds } },
+    { $pull: { savedPosts: { $in: existingPostIds } } },
+    options
+  );
+  if (deleteReports) {
+    await Report.deleteMany({ targetPost: { $in: existingPostIds } }, options);
+  }
 
   await Post.deleteMany({ _id: { $in: existingPostIds } }, options);
   return {
@@ -168,16 +164,14 @@ export async function deletePostAndComments(
 }
 
 async function reverseVotesByUser(userId, session) {
-  const [posts, comments] = await Promise.all([
-    withSession(
-      Post.find({ "votedBy.user": userId }).select("postedBy votedBy").lean(),
-      session
-    ),
-    withSession(
-      Comment.find({ "votedBy.user": userId }).select("commentedBy votedBy").lean(),
-      session
-    )
-  ]);
+  const posts = await withSession(
+    Post.find({ "votedBy.user": userId }).select("postedBy votedBy").lean(),
+    session
+  );
+  const comments = await withSession(
+    Comment.find({ "votedBy.user": userId }).select("commentedBy votedBy").lean(),
+    session
+  );
   const reputationByAuthor = new Map();
 
   function collect(authorId, votedBy) {
@@ -206,28 +200,26 @@ async function reverseVotesByUser(userId, session) {
 
 async function removeVotesByUser(userId, session) {
   const options = sessionOptions(session);
-  await Promise.all([
-    Post.updateMany(
-      { votedBy: { $elemMatch: { user: userId, voteType: "upvote" } } },
-      { $inc: { upvotes: -1 }, $pull: { votedBy: { user: userId } } },
-      options
-    ),
-    Post.updateMany(
-      { votedBy: { $elemMatch: { user: userId, voteType: "downvote" } } },
-      { $inc: { downvotes: -1 }, $pull: { votedBy: { user: userId } } },
-      options
-    ),
-    Comment.updateMany(
-      { votedBy: { $elemMatch: { user: userId, voteType: "upvote" } } },
-      { $inc: { upvotes: -1 }, $pull: { votedBy: { user: userId } } },
-      options
-    ),
-    Comment.updateMany(
-      { votedBy: { $elemMatch: { user: userId, voteType: "downvote" } } },
-      { $inc: { downvotes: -1 }, $pull: { votedBy: { user: userId } } },
-      options
-    )
-  ]);
+  await Post.updateMany(
+    { votedBy: { $elemMatch: { user: userId, voteType: "upvote" } } },
+    { $inc: { upvotes: -1 }, $pull: { votedBy: { user: userId } } },
+    options
+  );
+  await Post.updateMany(
+    { votedBy: { $elemMatch: { user: userId, voteType: "downvote" } } },
+    { $inc: { downvotes: -1 }, $pull: { votedBy: { user: userId } } },
+    options
+  );
+  await Comment.updateMany(
+    { votedBy: { $elemMatch: { user: userId, voteType: "upvote" } } },
+    { $inc: { upvotes: -1 }, $pull: { votedBy: { user: userId } } },
+    options
+  );
+  await Comment.updateMany(
+    { votedBy: { $elemMatch: { user: userId, voteType: "downvote" } } },
+    { $inc: { downvotes: -1 }, $pull: { votedBy: { user: userId } } },
+    options
+  );
 }
 
 export async function deleteCommunityCascade(communityId) {
@@ -311,31 +303,29 @@ export async function deleteUserCascade(userId) {
 
     await removeVotesByUser(user._id, session);
     const options = sessionOptions(session);
-    await Promise.all([
-      Community.updateMany(
-        { members: user._id },
-        { $pull: { members: user._id } },
+    await Community.updateMany(
+      { members: user._id },
+      { $pull: { members: user._id } },
+      options
+    );
+    if (communityIds.length > 0) {
+      await User.updateMany(
+        {
+          $or: [
+            { joinedCommunities: { $in: communityIds } },
+            { createdCommunities: { $in: communityIds } }
+          ]
+        },
+        {
+          $pull: {
+            joinedCommunities: { $in: communityIds },
+            createdCommunities: { $in: communityIds }
+          }
+        },
         options
-      ),
-      communityIds.length > 0
-        ? User.updateMany(
-            {
-              $or: [
-                { joinedCommunities: { $in: communityIds } },
-                { createdCommunities: { $in: communityIds } }
-              ]
-            },
-            {
-              $pull: {
-                joinedCommunities: { $in: communityIds },
-                createdCommunities: { $in: communityIds }
-              }
-            },
-            options
-          )
-        : Promise.resolve(),
-      Report.deleteMany({ reportedBy: user._id }, options)
-    ]);
+      );
+    }
+    await Report.deleteMany({ reportedBy: user._id }, options);
     if (communityIds.length > 0) {
       await Community.deleteMany({ _id: { $in: communityIds } }, options);
     }

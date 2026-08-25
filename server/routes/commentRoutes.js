@@ -60,14 +60,12 @@ router.post("/", requireLogin, async (req, res, next) => {
             { $addToSet: { comments: comment._id } },
             sessionOptions(session)
           );
-      const [referenceUpdate, userUpdate] = await Promise.all([
-        parentUpdate,
-        User.updateOne(
-          { _id: req.currentUser._id },
-          { $addToSet: { createdComments: comment._id } },
-          sessionOptions(session)
-        )
-      ]);
+      const referenceUpdate = await parentUpdate;
+      const userUpdate = await User.updateOne(
+        { _id: req.currentUser._id },
+        { $addToSet: { createdComments: comment._id } },
+        sessionOptions(session)
+      );
       if (referenceUpdate.matchedCount !== 1 || userUpdate.matchedCount !== 1) {
         throw new Error("Comment references could not be updated.");
       }

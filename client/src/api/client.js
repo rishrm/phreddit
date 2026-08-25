@@ -1,4 +1,6 @@
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/+$/, "");
+const configuredApiBase = import.meta.env.VITE_API_BASE_URL;
+const useProductionProxy = import.meta.env.PROD && import.meta.env.VITE_DIRECT_API !== "true";
+const API_BASE = (useProductionProxy ? "/api" : configuredApiBase || "/api").replace(/\/+$/, "");
 
 async function request(path, options = {}) {
   const { headers: suppliedHeaders, body, ...fetchOptions } = options;
@@ -81,6 +83,7 @@ export const api = {
       body: JSON.stringify(body)
     }),
   getPost: (id, options = {}) => request(`/posts/${id}`, options),
+  getPostSummary: (id, options = {}) => request(`/posts/${id}/summary`, options),
   viewPost: (id, options = {}) =>
     request(`/posts/${id}/view`, {
       ...options,
