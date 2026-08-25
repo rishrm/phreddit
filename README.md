@@ -33,7 +33,7 @@ Visitors can browse as a guest or register a new account.
 - Cascade deletion for communities, posts, comments, replies, and user-owned content
 - Session hardening: session ID regeneration on login, trusted-origin CSRF defense, helmet headers, CORS allowlist, and bounded global/auth rate limiting
 - Responsive layout, keyboard-visible focus states, loading/empty/error states, and toast notifications with distinct success/error styling
-- Unit (server + client), integration, and Playwright e2e tests in GitHub Actions, plus scheduled CodeQL analysis
+- Unit (server + client), integration, and Playwright e2e tests in GitHub Actions, plus repository-level CodeQL analysis
 
 ## Tech Stack
 
@@ -63,7 +63,6 @@ phreddit/
 │   ├── realtime.js       # Socket.IO emit wrapper
 │   └── server.js         # app factory + HTTP/Socket.IO bootstrap
 ├── .github/workflows/ci.yml
-├── .github/workflows/codeql.yml
 ├── AGENTS.md             # commands + invariants for AI coding agents
 ├── render.yaml           # Render blueprint for the API
 └── vercel.json           # Vercel config for the client

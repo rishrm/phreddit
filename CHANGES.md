@@ -40,7 +40,7 @@
 - Client unit tests (Vitest + React Testing Library) cover utilities, sorting semantics, listing excerpts, and dialog keyboard behavior.
 - Playwright covers the assignment register/login flow, dedicated New Comment page, two-user vote lifecycle, two-browser realtime invalidation, and mobile keyboard/overflow behavior.
 - GitHub Actions CI: dependency audits, lint + unit + build, and integration/e2e jobs against a MongoDB replica set with diagnostics uploaded on browser failures.
-- CodeQL scans JavaScript data flows on pull requests, protected-branch pushes, and a weekly schedule using the `security-extended` query suite.
+- GitHub's repository-level CodeQL default setup scans JavaScript and workflow data flows without duplicating configuration in this repository.
 
 ## Deployment & Docs
 - `render.yaml` blueprint for the API; `vercel.json` handles SPA deep links and a same-origin REST proxy while `VITE_SOCKET_URL` keeps realtime connected directly to Render.
