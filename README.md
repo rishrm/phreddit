@@ -38,7 +38,7 @@ Visitors can browse as a guest or register a new account.
 ## Tech Stack
 
 - **Client:** React 18, Vite, react-router-dom, socket.io-client, Lucide, marked + DOMPurify, Vitest + React Testing Library, Playwright
-- **Server:** Node.js, Express 4, Socket.IO, Mongoose 8, express-session + connect-mongo, bcrypt, helmet
+- **Server:** Node.js, Express 4, Socket.IO, Mongoose 8, express-session + connect-mongo, express-rate-limit, bcrypt, helmet
 - **Database:** MongoDB (text indexes for search, compound indexes for listings)
 
 ## Project Structure

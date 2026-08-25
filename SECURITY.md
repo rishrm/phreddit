@@ -24,7 +24,8 @@ quickly as possible and credited when appropriate.
 - Post and comment voter lists are private and must pass through the shared
   serializer before entering an API response.
 - Vercel proxies REST requests through same-origin `/api`; unsafe API requests
-  also require a trusted `Origin` and all routes share bounded rate limiting.
+  also require a trusted `Origin`, and `express-rate-limit` protects every API
+  route with a separate stricter budget for authentication attempts.
 - Production replica sets use transactions for multi-document votes,
   ownership references, moderation, membership changes, and cascade deletion.
 - Administrator privileges are granted only through the guarded

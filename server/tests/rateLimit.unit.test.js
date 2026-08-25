@@ -1,98 +1,99 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createMemoryRateLimiter } from "../middleware/rateLimit.js";
+import { createRateLimiter } from "../middleware/rateLimit.js";
 
-function makeResponse() {
+function createRequest(path) {
   return {
-    statusCode: null,
-    body: null,
+    app: {
+      get(setting) {
+        return setting === "trust proxy" ? false : undefined;
+      }
+    },
     headers: {},
-    set(name, value) {
-      this.headers[name] = value;
+    ip: "127.0.0.1",
+    originalUrl: path,
+    socket: { remoteAddress: "127.0.0.1" }
+  };
+}
+
+function createResponse() {
+  const headers = new Map();
+  return {
+    body: null,
+    headers,
+    headersSent: false,
+    statusCode: 200,
+    writableEnded: false,
+    append(name, value) {
+      const key = name.toLowerCase();
+      const existing = headers.get(key);
+      headers.set(key, existing ? `${existing}, ${value}` : value);
+    },
+    getHeader(name) {
+      return headers.get(name.toLowerCase());
+    },
+    send(body) {
+      this.body = body;
+      this.writableEnded = true;
       return this;
+    },
+    setHeader(name, value) {
+      headers.set(name.toLowerCase(), String(value));
     },
     status(code) {
       this.statusCode = code;
-      return this;
-    },
-    json(body) {
-      this.body = body;
       return this;
     }
   };
 }
 
-test("memory rate limiter blocks repeated requests and resets after the window", () => {
-  let currentTime = 1000;
-  const limiter = createMemoryRateLimiter({
-    windowMs: 1000,
+async function invoke(limiter, path) {
+  const request = createRequest(path);
+  const response = createResponse();
+  let advanced = false;
+  let error = null;
+  await limiter(request, response, (nextError) => {
+    error = nextError || null;
+    advanced = !nextError;
+  });
+  if (error) throw error;
+  return { advanced, request, response };
+}
+
+test("rate limiter blocks repeated requests with standard retry metadata", async () => {
+  const limiter = createRateLimiter({
+    windowMs: 60_000,
     max: 2,
-    keyPrefix: "test",
-    message: "Slow down.",
-    now: () => currentTime
+    message: "Slow down."
   });
-  const req = { ip: "127.0.0.1", path: "/login" };
-  let nextCalls = 0;
 
-  limiter(req, makeResponse(), () => { nextCalls += 1; });
-  limiter(req, makeResponse(), () => { nextCalls += 1; });
+  assert.equal((await invoke(limiter, "/one")).advanced, true);
+  assert.equal((await invoke(limiter, "/one")).advanced, true);
 
-  const limitedResponse = makeResponse();
-  limiter(req, limitedResponse, () => { nextCalls += 1; });
-
-  assert.equal(nextCalls, 2);
-  assert.equal(limitedResponse.statusCode, 429);
-  assert.equal(limitedResponse.body.error, "Slow down.");
-  assert.equal(limitedResponse.headers["Retry-After"], "1");
-  assert.equal(limitedResponse.headers["RateLimit-Limit"], "2");
-  assert.equal(limitedResponse.headers["RateLimit-Remaining"], "0");
-
-  currentTime = 2100;
-  limiter(req, makeResponse(), () => { nextCalls += 1; });
-
-  assert.equal(nextCalls, 3);
+  const limited = await invoke(limiter, "/one");
+  assert.equal(limited.advanced, false);
+  assert.equal(limited.response.statusCode, 429);
+  assert.deepEqual(limited.response.body, { error: "Slow down." });
+  assert.ok(limited.response.headers.get("ratelimit"));
+  assert.ok(limited.response.headers.get("retry-after"));
 });
 
-test("memory rate limiter can share one budget across API paths", () => {
-  const limiter = createMemoryRateLimiter({
-    windowMs: 1000,
-    max: 1,
-    includePath: false
-  });
-  let nextCalls = 0;
+test("rate limiter shares one budget across protected API paths", async () => {
+  const limiter = createRateLimiter({ windowMs: 60_000, max: 1 });
 
-  limiter(
-    { ip: "127.0.0.1", path: "/posts" },
-    makeResponse(),
-    () => { nextCalls += 1; }
-  );
-  const limitedResponse = makeResponse();
-  limiter(
-    { ip: "127.0.0.1", path: "/communities" },
-    limitedResponse,
-    () => { nextCalls += 1; }
-  );
-
-  assert.equal(nextCalls, 1);
-  assert.equal(limitedResponse.statusCode, 429);
+  assert.equal((await invoke(limiter, "/one")).advanced, true);
+  assert.equal((await invoke(limiter, "/two")).response.statusCode, 429);
 });
 
-test("memory rate limiter normalizes path casing and trailing slashes", () => {
-  const limiter = createMemoryRateLimiter({ windowMs: 1000, max: 1 });
-  let nextCalls = 0;
+test("rate limiting can be explicitly disabled for isolated test and benchmark runs", async (t) => {
+  const previousValue = process.env.DISABLE_RATE_LIMIT;
+  process.env.DISABLE_RATE_LIMIT = "true";
+  t.after(() => {
+    if (previousValue === undefined) delete process.env.DISABLE_RATE_LIMIT;
+    else process.env.DISABLE_RATE_LIMIT = previousValue;
+  });
 
-  limiter(
-    { ip: "127.0.0.1", path: "/Login/" },
-    makeResponse(),
-    () => { nextCalls += 1; }
-  );
-  const limitedResponse = makeResponse();
-  limiter(
-    { ip: "127.0.0.1", path: "/login" },
-    limitedResponse,
-    () => { nextCalls += 1; }
-  );
-
-  assert.equal(nextCalls, 1);
-  assert.equal(limitedResponse.statusCode, 429);
+  const limiter = createRateLimiter({ windowMs: 60_000, max: 1 });
+  assert.equal((await invoke(limiter, "/one")).advanced, true);
+  assert.equal((await invoke(limiter, "/one")).advanced, true);
 });
