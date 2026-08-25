@@ -1,13 +1,17 @@
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/+$/, "");
 
 async function request(path, options = {}) {
+  const { headers: suppliedHeaders, body, ...fetchOptions } = options;
+  const headers = new Headers(suppliedHeaders || {});
+  if (body !== undefined && !(body instanceof FormData) && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
   const response = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {})
-    },
-    ...options
+    ...fetchOptions,
+    headers,
+    ...(body !== undefined ? { body } : {})
   });
 
   const data = await response.json().catch(() => ({}));
@@ -35,8 +39,8 @@ export const api = {
     request("/auth/logout", {
       method: "POST"
     }),
-  getCommunities: () => request("/communities"),
-  getCommunity: (id) => request(`/communities/${id}`),
+  getCommunities: (options = {}) => request("/communities", options),
+  getCommunity: (id, options = {}) => request(`/communities/${id}`, options),
   createCommunity: (body) =>
     request("/communities", {
       method: "POST",
@@ -59,7 +63,7 @@ export const api = {
     request(`/communities/${id}/leave`, {
       method: "POST"
     }),
-  getPosts: (params = {}) => {
+  getPosts: (params = {}, options = {}) => {
     const query = new URLSearchParams();
     if (params.community) query.set("community", params.community);
     if (params.linkFlair) query.set("linkFlair", params.linkFlair);
@@ -68,17 +72,18 @@ export const api = {
     if (params.page) query.set("page", String(params.page));
     if (params.limit) query.set("limit", String(params.limit));
     const suffix = query.toString() ? `?${query.toString()}` : "";
-    return request(`/posts${suffix}`);
+    return request(`/posts${suffix}`, options);
   },
-  getLinkFlairs: () => request("/linkflairs"),
+  getLinkFlairs: (options = {}) => request("/linkflairs", options),
   createLinkFlair: (body) =>
     request("/linkflairs", {
       method: "POST",
       body: JSON.stringify(body)
     }),
-  getPost: (id) => request(`/posts/${id}`),
-  viewPost: (id) =>
+  getPost: (id, options = {}) => request(`/posts/${id}`, options),
+  viewPost: (id, options = {}) =>
     request(`/posts/${id}/view`, {
+      ...options,
       method: "POST"
     }),
   createPost: (body) =>
@@ -132,20 +137,20 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body)
     }),
-  listReports: (params = {}) => {
+  listReports: (params = {}, options = {}) => {
     const query = new URLSearchParams();
     if (params.status) query.set("status", params.status);
     const suffix = query.toString() ? `?${query.toString()}` : "";
-    return request(`/reports${suffix}`);
+    return request(`/reports${suffix}`, options);
   },
   resolveReport: (id, body) =>
     request(`/reports/${id}/resolve`, {
       method: "POST",
       body: JSON.stringify(body)
     }),
-  getProfileContent: (id) => request(`/users/${id}/profile-content`),
-  getPublicProfile: (id) => request(`/users/${id}/public`),
-  listUsers: () => request("/users"),
+  getProfileContent: (id, options = {}) => request(`/users/${id}/profile-content`, options),
+  getPublicProfile: (id, options = {}) => request(`/users/${id}/public`, options),
+  listUsers: (options = {}) => request("/users", options),
   deleteUser: (id) =>
     request(`/users/${id}`, {
       method: "DELETE"

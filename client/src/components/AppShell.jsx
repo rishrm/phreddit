@@ -21,7 +21,7 @@ export default function AppShell({
         onCreateCommunity={onCreateCommunity}
         onCreatePost={onCreatePost}
       />
-      <div className="view-stack">{children}</div>
+      <div id="main-content" className="view-stack" tabIndex={-1}>{children}</div>
     </div>
   );
 }

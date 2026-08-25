@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { api } from "../api/client.js";
 import SortButtons from "../components/SortButtons.jsx";
@@ -17,9 +17,11 @@ export default function Home() {
   const [flairs, setFlairs] = useState([]);
   const [selectedFlair, setSelectedFlair] = useState("");
   const [currentSort, setCurrentSort] = useState("newest");
+  const requestIdRef = useRef(0);
 
   const load = useCallback(
-    async (targetPage, append) => {
+    async (targetPage, append, signal) => {
+      const requestId = ++requestIdRef.current;
       try {
         setLoading(true);
         setError("");
@@ -28,7 +30,8 @@ export default function Home() {
           sort: currentSort,
           page: targetPage,
           limit: PAGE_SIZE
-        });
+        }, { signal });
+        if (requestId !== requestIdRef.current) return;
         setPosts((previous) =>
           append ? [...previous, ...(data.posts || [])] : data.posts || []
         );
@@ -36,23 +39,30 @@ export default function Home() {
         setTotal(data.total ?? 0);
         setHasMore(Boolean(data.hasMore));
       } catch (loadError) {
+        if (loadError.name === "AbortError" || requestId !== requestIdRef.current) return;
         setError(loadError.message);
       } finally {
-        setLoading(false);
+        if (requestId === requestIdRef.current) setLoading(false);
       }
     },
     [selectedFlair, currentSort]
   );
 
   useEffect(() => {
-    load(1, false);
+    const controller = new AbortController();
+    void load(1, false, controller.signal);
+    return () => controller.abort();
   }, [load, refreshToken]);
 
   useEffect(() => {
+    const controller = new AbortController();
     api
-      .getLinkFlairs()
+      .getLinkFlairs({ signal: controller.signal })
       .then((data) => setFlairs(data.linkFlairs || []))
-      .catch(() => setFlairs([]));
+      .catch((loadError) => {
+        if (loadError.name !== "AbortError") setFlairs([]);
+      });
+    return () => controller.abort();
   }, [refreshToken]);
 
   return (
@@ -82,7 +92,7 @@ export default function Home() {
       </div>
       <p className="post-count">Showing {posts.length} of {total} posts</p>
       {error && (
-        <p className="muted">
+        <p className="error-state" role="alert">
           {error}{" "}
           <button type="button" onClick={() => load(1, false)}>Retry</button>
         </p>

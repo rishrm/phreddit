@@ -3,6 +3,7 @@ import { useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { api } from "../api/client.js";
 import ConfirmDialog from "../components/ConfirmDialog.jsx";
 import EditableItemRow from "../components/EditableItemRow.jsx";
+import RichText from "../components/RichText.jsx";
 import { formatDate } from "../utils/format.jsx";
 
 export default function Profile() {
@@ -17,6 +18,7 @@ export default function Profile() {
   const [editing, setEditing] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [localRefresh, setLocalRefresh] = useState(0);
+  const [profileError, setProfileError] = useState("");
 
   const isViewingOther = Boolean(viewedUserId) && String(viewedUserId) !== String(user?._id || "");
   const profileTargetId = viewedUserId || user?._id;
@@ -28,26 +30,42 @@ export default function Profile() {
 
   useEffect(() => {
     if (!profileTargetId) return;
+    const controller = new AbortController();
+    setProfile(null);
+    setProfileError("");
     api
-      .getProfileContent(profileTargetId)
+      .getProfileContent(profileTargetId, { signal: controller.signal })
       .then((data) => setProfile(data))
-      .catch((error) => showMessage(error.message, "error"));
+      .catch((error) => {
+        if (error.name === "AbortError") return;
+        setProfileError(error.message);
+        showMessage(error.message, "error");
+      });
+    return () => controller.abort();
   }, [profileTargetId, showMessage, refreshToken, localRefresh]);
 
   useEffect(() => {
     if (!user?.isAdmin) return;
+    const controller = new AbortController();
     api
-      .listUsers()
+      .listUsers({ signal: controller.signal })
       .then((data) => setUsers(data.users || []))
-      .catch((error) => showMessage(error.message, "error"));
+      .catch((error) => {
+        if (error.name !== "AbortError") showMessage(error.message, "error");
+      });
+    return () => controller.abort();
   }, [user, showMessage, refreshToken, localRefresh]);
 
   useEffect(() => {
     if (!user?.isAdmin || isViewingOther) return;
+    const controller = new AbortController();
     api
-      .listReports()
+      .listReports({}, { signal: controller.signal })
       .then((data) => setReports(data.reports || []))
-      .catch((error) => showMessage(error.message, "error"));
+      .catch((error) => {
+        if (error.name !== "AbortError") showMessage(error.message, "error");
+      });
+    return () => controller.abort();
   }, [user, isViewingOther, showMessage, refreshToken, localRefresh]);
 
   function refresh() {
@@ -107,9 +125,10 @@ export default function Profile() {
   }
 
   function requestResolveReport(report, action) {
+    const reportedTitle = report.targetPost?.title || report.contentSnapshot?.title || "removed post";
     setConfirm({
       title: action === "delete_post"
-        ? `Delete reported post "${report.targetPost?.title || "removed post"}"?`
+        ? `Delete reported post "${reportedTitle}"?`
         : "Dismiss this report?",
       body: action === "delete_post"
         ? "The post and all of its comments will be removed."
@@ -238,6 +257,7 @@ export default function Profile() {
             id={`profile-tab-${tab.id}`}
             role="tab"
             aria-selected={activeTab === tab.id}
+            aria-controls={`profile-panel-${tab.id}`}
             tabIndex={activeTab === tab.id ? 0 : -1}
             className={activeTab === tab.id ? "tab active" : "tab"}
             onClick={() => setActiveTab(tab.id)}
@@ -254,7 +274,7 @@ export default function Profile() {
           {editing.kind === "post" && (
             <>
               <label>Title<input name="title" defaultValue={editing.item.title} required maxLength={100} /></label>
-              <label>Content<textarea name="content" defaultValue={editing.item.content} required /></label>
+              <label>Content<textarea name="content" defaultValue={editing.item.content} required maxLength={20000} /></label>
             </>
           )}
           {editing.kind === "community" && (
@@ -273,8 +293,20 @@ export default function Profile() {
         </form>
       )}
 
+      {profileError && (
+        <p className="error-state" role="alert">
+          {profileError}{" "}
+          <button type="button" onClick={refresh}>Retry</button>
+        </p>
+      )}
+
       {activeTab === "posts" && (
-        <div className="list-column">
+        <div
+          id="profile-panel-posts"
+          className="list-column"
+          role="tabpanel"
+          aria-labelledby="profile-tab-posts"
+        >
           {(profile?.posts || []).length === 0 ? <p>No posts yet.</p> :
             profile.posts.map((post) => (
               <EditableItemRow
@@ -289,7 +321,12 @@ export default function Profile() {
       )}
 
       {activeTab === "communities" && (
-        <div className="list-column">
+        <div
+          id="profile-panel-communities"
+          className="list-column"
+          role="tabpanel"
+          aria-labelledby="profile-tab-communities"
+        >
           {(profile?.communities || []).length === 0 ? <p>No communities yet.</p> :
             profile.communities.map((community) => (
               <EditableItemRow
@@ -304,7 +341,12 @@ export default function Profile() {
       )}
 
       {activeTab === "saved" && (
-        <div className="list-column">
+        <div
+          id="profile-panel-saved"
+          className="list-column"
+          role="tabpanel"
+          aria-labelledby="profile-tab-saved"
+        >
           {(profile?.savedPosts || []).length === 0 ? <p>No saved posts yet.</p> :
             profile.savedPosts.map((post) => (
               <div key={post._id} className="row-card">
@@ -326,7 +368,12 @@ export default function Profile() {
       )}
 
       {activeTab === "comments" && (
-        <div className="list-column">
+        <div
+          id="profile-panel-comments"
+          className="list-column"
+          role="tabpanel"
+          aria-labelledby="profile-tab-comments"
+        >
           {(profile?.comments || []).length === 0 ? <p>No comments yet.</p> :
             profile.comments.map((comment) => (
               <EditableItemRow
@@ -341,7 +388,12 @@ export default function Profile() {
       )}
 
       {activeTab === "users" && user.isAdmin && !isViewingOther && (
-        <div className="list-column">
+        <div
+          id="profile-panel-users"
+          className="list-column"
+          role="tabpanel"
+          aria-labelledby="profile-tab-users"
+        >
           {users.length === 0 ? (
             <p>No users found.</p>
           ) : (
@@ -362,29 +414,54 @@ export default function Profile() {
       )}
 
       {activeTab === "moderation" && user.isAdmin && !isViewingOther && (
-        <div className="list-column">
+        <div
+          id="profile-panel-moderation"
+          className="list-column"
+          role="tabpanel"
+          aria-labelledby="profile-tab-moderation"
+        >
           {reports.length === 0 ? (
             <p>No pending reports.</p>
           ) : (
-            reports.map((report) => (
-              <div key={report._id} className="row-card moderation-card">
-                <div className="row-card-text">
-                  <span className="row-card-title">{report.targetPost?.title || "Removed post"}</span>
-                  <span className="row-card-subtitle">
-                    {report.reason} report from {report.reportedBy?.displayName || "Unknown user"}
-                    {report.targetPost?.community?.name ? ` in ${report.targetPost.community.name}` : ""}
-                  </span>
-                  {report.details && <span className="row-card-subtitle">{report.details}</span>}
+            reports.map((report) => {
+              const snapshot = report.contentSnapshot || {};
+              const title = report.targetPost?.title || snapshot.title || "Removed post";
+              const communityName = report.targetPost?.community?.name || snapshot.communityName;
+              const content = report.targetPost?.content || snapshot.content;
+              const processing = report.status === "processing";
+              return (
+                <div key={report._id} className="row-card moderation-card">
+                  <div className="row-card-text">
+                    <span className="row-card-title">{title}</span>
+                    <span className="row-card-subtitle">
+                      {report.reason} report from {report.reportedBy?.displayName || "Unknown user"}
+                      {communityName ? ` in ${communityName}` : ""}
+                    </span>
+                    {content && <RichText text={content.slice(0, 500)} />}
+                    {report.details && <span className="row-card-subtitle">{report.details}</span>}
+                    {processing && <span className="row-card-subtitle">Resolution in progress...</span>}
+                  </div>
+                  <div className="row-card-actions">
+                    {report.targetPost && (
+                      <button onClick={() => navigate(`/posts/${report.targetPost._id}`)}>Open</button>
+                    )}
+                    <button
+                      disabled={processing}
+                      onClick={() => requestResolveReport(report, "dismiss")}
+                    >
+                      Dismiss
+                    </button>
+                    <button
+                      className="danger"
+                      disabled={processing}
+                      onClick={() => requestResolveReport(report, "delete_post")}
+                    >
+                      Delete post
+                    </button>
+                  </div>
                 </div>
-                <div className="row-card-actions">
-                  {report.targetPost && (
-                    <button onClick={() => navigate(`/posts/${report.targetPost._id}`)}>Open</button>
-                  )}
-                  <button onClick={() => requestResolveReport(report, "dismiss")}>Dismiss</button>
-                  <button className="danger" onClick={() => requestResolveReport(report, "delete_post")}>Delete post</button>
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       )}

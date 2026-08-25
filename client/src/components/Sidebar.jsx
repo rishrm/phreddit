@@ -25,6 +25,7 @@ export default function Sidebar({
           communities.map((community) => (
             <button
               key={community._id}
+              aria-current={String(selectedCommunityId) === String(community._id) ? "page" : undefined}
               className={String(selectedCommunityId) === String(community._id) ? "link-button active" : "link-button"}
               onClick={() => onOpenCommunity(community._id)}
             >

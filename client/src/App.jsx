@@ -4,8 +4,8 @@ import {
   Outlet,
   Route,
   Routes,
+  useLocation,
   useNavigate,
-  useParams
 } from "react-router-dom";
 import { api } from "./api/client.js";
 import AppShell from "./components/AppShell.jsx";
@@ -35,17 +35,19 @@ function Layout({
   onLogout
 }) {
   const navigate = useNavigate();
-  const params = useParams();
+  const location = useLocation();
+  const communityMatch = location.pathname.match(/^\/communities\/([^/]+)$/);
 
   return (
     <>
+      <a className="skip-link" href="#main-content">Skip to content</a>
       <div className="top-bar">
         <Banner user={user} onLogout={onLogout} />
       </div>
       <AppShell
         user={user}
         communities={communities}
-        selectedCommunityId={params.communityId || null}
+        selectedCommunityId={communityMatch?.[1] || null}
         onHome={() => navigate("/home")}
         onOpenCommunity={(id) => navigate(`/communities/${id}`)}
         onCreateCommunity={() => navigate("/communities/new")}
@@ -64,6 +66,29 @@ function Layout({
       </AppShell>
     </>
   );
+}
+
+function RouteAnnouncer() {
+  const location = useLocation();
+  const routeName = location.pathname.startsWith("/posts/")
+    ? "Post"
+    : location.pathname.startsWith("/communities/")
+      ? "Community"
+      : location.pathname.startsWith("/users/")
+        ? "User profile"
+        : location.pathname.startsWith("/profile")
+          ? "Profile"
+          : location.pathname === "/search"
+            ? "Search"
+            : location.pathname === "/home"
+              ? "Home"
+              : "Phreddit";
+
+  useEffect(() => {
+    document.title = routeName === "Phreddit" ? "Phreddit" : `${routeName} | Phreddit`;
+  }, [routeName]);
+
+  return <p className="sr-only" aria-live="polite">Navigated to {routeName}</p>;
 }
 
 export default function App() {
@@ -163,10 +188,14 @@ export default function App() {
 
   useEffect(() => {
     if (!authChecked) return;
+    const controller = new AbortController();
     api
-      .getCommunities()
+      .getCommunities({ signal: controller.signal })
       .then((data) => setCommunities(data.communities || []))
-      .catch((error) => showMessage(error.message, "error"));
+      .catch((error) => {
+        if (error.name !== "AbortError") showMessage(error.message, "error");
+      });
+    return () => controller.abort();
   }, [authChecked, refreshToken, user?._id, showMessage]);
 
   useEffect(() => {
@@ -189,6 +218,7 @@ export default function App() {
 
   return (
     <>
+      <RouteAnnouncer />
       {message && (
         <p
           role={isError ? "alert" : "status"}

@@ -37,6 +37,7 @@ export default function Register({ showMessage }) {
           id="firstName"
           placeholder="First name"
           required
+          maxLength={50}
           value={form.firstName}
           onChange={(event) => setForm({ ...form, firstName: event.target.value })}
         />
@@ -45,6 +46,7 @@ export default function Register({ showMessage }) {
           id="lastName"
           placeholder="Last name"
           required
+          maxLength={50}
           value={form.lastName}
           onChange={(event) => setForm({ ...form, lastName: event.target.value })}
         />
@@ -54,6 +56,7 @@ export default function Register({ showMessage }) {
           placeholder="Email"
           type="email"
           required
+          maxLength={254}
           value={form.email}
           onChange={(event) => setForm({ ...form, email: event.target.value })}
         />
@@ -62,6 +65,7 @@ export default function Register({ showMessage }) {
           id="displayName"
           placeholder="Display name"
           required
+          maxLength={50}
           value={form.displayName}
           onChange={(event) => setForm({ ...form, displayName: event.target.value })}
         />

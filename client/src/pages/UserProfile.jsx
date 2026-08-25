@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useOutletContext, useParams } from "react-router-dom";
 import { api } from "../api/client.js";
 import { formatDate } from "../utils/format.jsx";
@@ -11,25 +11,35 @@ export default function UserProfile() {
   const [profile, setProfile] = useState(null);
   const [error, setError] = useState("");
 
-  useEffect(() => {
+  const loadProfile = useCallback(async (signal) => {
     if (!userId) return;
     setProfile(null);
     setError("");
-    api
-      .getPublicProfile(userId)
-      .then((data) => setProfile(data))
-      .catch((loadError) => {
-        setError(loadError.message);
-        showMessage(loadError.message, "error");
-      });
+    try {
+      const data = await api.getPublicProfile(userId, { signal });
+      setProfile(data);
+    } catch (loadError) {
+      if (loadError.name === "AbortError") return;
+      setError(loadError.message);
+      showMessage(loadError.message, "error");
+    }
   }, [userId, showMessage]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadProfile(controller.signal);
+    return () => controller.abort();
+  }, [loadProfile]);
 
   if (error) {
     return (
       <main className="card">
         <h1>User</h1>
-        <p>{error}</p>
-        <Link className="inline-link" to="/home">Back to Home</Link>
+        <p className="error-state" role="alert">{error}</p>
+        <div className="action-row">
+          <button type="button" onClick={() => loadProfile()}>Retry</button>
+          <Link className="button-link" to="/home">Back to Home</Link>
+        </div>
       </main>
     );
   }
