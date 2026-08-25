@@ -12,7 +12,19 @@ const POST_COUNT = Number(process.argv[2] || 2000);
 const COMMENTS_PER_POST = 3;
 
 async function main() {
+  if (!Number.isInteger(POST_COUNT) || POST_COUNT < 1 || POST_COUNT > 100000) {
+    throw new Error("postCount must be an integer between 1 and 100000.");
+  }
   await mongoose.connect(MONGO_URI);
+  const databaseName = mongoose.connection.name;
+  if (
+    !databaseName.toLowerCase().includes("bench") ||
+    process.env.CONFIRM_DATABASE_RESET !== databaseName
+  ) {
+    throw new Error(
+      `Refusing to erase ${databaseName}. Use a benchmark database and set CONFIRM_DATABASE_RESET=${databaseName}.`
+    );
+  }
   await Promise.all([
     User.deleteMany({}),
     Community.deleteMany({}),
@@ -71,7 +83,7 @@ async function main() {
   }
   await Comment.insertMany(comments);
 
-  console.log(`Seeded ${createdPosts.length} posts and ${comments.length} comments into ${MONGO_URI}`);
+  console.log(`Seeded ${createdPosts.length} posts and ${comments.length} comments into ${databaseName}.`);
   await mongoose.disconnect();
 }
 

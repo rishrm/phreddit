@@ -60,5 +60,8 @@ const commentSchema = new mongoose.Schema(
 
 commentSchema.index({ content: "text" });
 commentSchema.index({ post: 1, createdAt: -1 });
+commentSchema.index({ commentedBy: 1, createdAt: -1 });
+commentSchema.index({ parentComment: 1 });
+commentSchema.index({ "votedBy.user": 1 });
 
 export default mongoose.model("Comment", commentSchema);

@@ -31,7 +31,10 @@ export function createMemoryRateLimiter({
       req.ip || req.socket?.remoteAddress || "unknown"
     ];
     if (includePath) {
-      keyParts.push(req.path || req.originalUrl || "");
+      const normalizedPath = String(req.path || req.originalUrl || "")
+        .toLowerCase()
+        .replace(/\/$/, "") || "/";
+      keyParts.push(normalizedPath);
     }
     const key = keyParts.join(":");
     const current = attempts.get(key);

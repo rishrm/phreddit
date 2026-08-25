@@ -1,44 +1,44 @@
 import express from "express";
+import mongoose from "mongoose";
 import Community from "../models/Community.js";
 import User from "../models/User.js";
 import { requireLogin } from "../middleware/auth.js";
 import { deleteCommunityCascade } from "../utils/cascadeDelete.js";
 import { requireLength, requireValidUserContent } from "../utils/validation.js";
+import { runAtomic, sessionOptions, withSession } from "../utils/transactions.js";
 
 const router = express.Router();
 
 router.get("/", async (req, res, next) => {
   try {
-    const communities = await Community.find({})
-      .select("name description creator members createdAt")
-      .populate("creator", "displayName")
-      .sort({ name: 1 })
-      .lean();
+    const currentUserId = req.currentUser?._id || null;
+    const communities = await Community.aggregate([
+      {
+        $project: {
+          name: 1,
+          description: 1,
+          creator: 1,
+          createdAt: 1,
+          memberCount: { $size: { $ifNull: ["$members", []] } },
+          isJoined: currentUserId
+            ? { $in: [currentUserId, { $ifNull: ["$members", []] }] }
+            : { $literal: false }
+        }
+      },
+      {
+        $lookup: {
+          from: User.collection.name,
+          localField: "creator",
+          foreignField: "_id",
+          pipeline: [{ $project: { displayName: 1 } }],
+          as: "creator"
+        }
+      },
+      { $set: { creator: { $arrayElemAt: ["$creator", 0] } } },
+      { $sort: { isJoined: -1, name: 1 } }
+    ]);
 
-    const joined = new Set(
-      (req.currentUser?.joinedCommunities || []).map((id) => String(id))
-    );
-
-    const presented = communities.map((community) => ({
-      _id: community._id,
-      name: community.name,
-      description: community.description,
-      creator: community.creator,
-      createdAt: community.createdAt,
-      memberCount: community.members.length,
-      isJoined: joined.has(String(community._id))
-    }));
-
-    presented.sort((a, b) => {
-      const aJoined = a.isJoined;
-      const bJoined = b.isJoined;
-      if (aJoined !== bJoined) {
-        return aJoined ? -1 : 1;
-      }
-      return a.name.localeCompare(b.name);
-    });
-
-    return res.json({ communities: presented });
+    return res.json({ communities });
   } catch (error) {
     next(error);
   }
@@ -46,9 +46,35 @@ router.get("/", async (req, res, next) => {
 
 router.get("/:id", async (req, res, next) => {
   try {
-    const community = await Community.findById(req.params.id)
-      .populate("creator", "displayName")
-      .populate("members", "displayName");
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: "Invalid community id." });
+    }
+    const currentUserId = req.currentUser?._id || null;
+    const [community] = await Community.aggregate([
+      { $match: { _id: new mongoose.Types.ObjectId(req.params.id) } },
+      {
+        $project: {
+          name: 1,
+          description: 1,
+          creator: 1,
+          createdAt: 1,
+          memberCount: { $size: { $ifNull: ["$members", []] } },
+          isJoined: currentUserId
+            ? { $in: [currentUserId, { $ifNull: ["$members", []] }] }
+            : { $literal: false }
+        }
+      },
+      {
+        $lookup: {
+          from: User.collection.name,
+          localField: "creator",
+          foreignField: "_id",
+          pipeline: [{ $project: { displayName: 1 } }],
+          as: "creator"
+        }
+      },
+      { $set: { creator: { $arrayElemAt: ["$creator", 0] } } }
+    ]);
 
     if (!community) {
       return res.status(404).json({
@@ -56,11 +82,7 @@ router.get("/:id", async (req, res, next) => {
       });
     }
 
-    // Posts are served by the paginated /api/posts?community=:id listing.
-    const communityData = community.toObject({ virtuals: true });
-    delete communityData.posts;
-
-    return res.json({ community: communityData });
+    return res.json({ community });
   } catch (error) {
     next(error);
   }
@@ -75,27 +97,39 @@ router.post("/", requireLogin, async (req, res, next) => {
       500
     );
 
-    const existing = await Community.findOne({ name });
-    if (existing) {
-      return res.status(409).json({
-        error: "Community names must be unique."
-      });
-    }
+    const community = await runAtomic(async (session) => {
+      const existing = await withSession(Community.exists({ name }), session);
+      if (existing) return null;
 
-    const community = await Community.create({
-      name,
-      description,
-      creator: req.currentUser._id,
-      members: [req.currentUser._id],
-      posts: []
-    });
-
-    await User.findByIdAndUpdate(req.currentUser._id, {
-      $addToSet: {
-        createdCommunities: community._id,
-        joinedCommunities: community._id
+      const [created] = await Community.create(
+        [{
+          name,
+          description,
+          creator: req.currentUser._id,
+          members: [req.currentUser._id],
+          posts: []
+        }],
+        sessionOptions(session)
+      );
+      const userUpdate = await User.updateOne(
+        { _id: req.currentUser._id },
+        {
+          $addToSet: {
+            createdCommunities: created._id,
+            joinedCommunities: created._id
+          }
+        },
+        sessionOptions(session)
+      );
+      if (userUpdate.matchedCount !== 1) {
+        throw new Error("Community owner no longer exists.");
       }
+      return created;
     });
+
+    if (!community) {
+      return res.status(409).json({ error: "Community names must be unique." });
+    }
 
     return res.status(201).json({
       message: "Community created successfully.",
@@ -180,24 +214,27 @@ router.delete("/:id", requireLogin, async (req, res, next) => {
 
 router.post("/:id/join", requireLogin, async (req, res, next) => {
   try {
-    const community = await Community.findById(req.params.id);
-    if (!community) {
-      return res.status(404).json({
-        error: "Community not found."
-      });
+    const joined = await runAtomic(async (session) => {
+      const communityUpdate = await Community.updateOne(
+        { _id: req.params.id },
+        { $addToSet: { members: req.currentUser._id } },
+        sessionOptions(session)
+      );
+      if (communityUpdate.matchedCount !== 1) return false;
+      const userUpdate = await User.updateOne(
+        { _id: req.currentUser._id },
+        { $addToSet: { joinedCommunities: req.params.id } },
+        sessionOptions(session)
+      );
+      if (userUpdate.matchedCount !== 1) {
+        throw new Error("Community member no longer exists.");
+      }
+      return true;
+    });
+
+    if (!joined) {
+      return res.status(404).json({ error: "Community not found." });
     }
-
-    await Community.findByIdAndUpdate(community._id, {
-      $addToSet: {
-        members: req.currentUser._id
-      }
-    });
-
-    await User.findByIdAndUpdate(req.currentUser._id, {
-      $addToSet: {
-        joinedCommunities: community._id
-      }
-    });
 
     return res.json({
       message: "Joined community successfully."
@@ -209,24 +246,27 @@ router.post("/:id/join", requireLogin, async (req, res, next) => {
 
 router.post("/:id/leave", requireLogin, async (req, res, next) => {
   try {
-    const community = await Community.findById(req.params.id);
-    if (!community) {
-      return res.status(404).json({
-        error: "Community not found."
-      });
+    const left = await runAtomic(async (session) => {
+      const communityUpdate = await Community.updateOne(
+        { _id: req.params.id },
+        { $pull: { members: req.currentUser._id } },
+        sessionOptions(session)
+      );
+      if (communityUpdate.matchedCount !== 1) return false;
+      const userUpdate = await User.updateOne(
+        { _id: req.currentUser._id },
+        { $pull: { joinedCommunities: req.params.id } },
+        sessionOptions(session)
+      );
+      if (userUpdate.matchedCount !== 1) {
+        throw new Error("Community member no longer exists.");
+      }
+      return true;
+    });
+
+    if (!left) {
+      return res.status(404).json({ error: "Community not found." });
     }
-
-    await Community.findByIdAndUpdate(community._id, {
-      $pull: {
-        members: req.currentUser._id
-      }
-    });
-
-    await User.findByIdAndUpdate(req.currentUser._id, {
-      $pull: {
-        joinedCommunities: community._id
-      }
-    });
 
     return res.json({
       message: "Left community successfully."

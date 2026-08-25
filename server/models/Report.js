@@ -27,9 +27,16 @@ const reportSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["pending", "dismissed", "content_removed"],
+      enum: ["pending", "processing", "dismissed", "content_removed"],
       default: "pending",
       index: true
+    },
+    contentSnapshot: {
+      title: { type: String, default: "" },
+      content: { type: String, default: "" },
+      communityName: { type: String, default: "" },
+      authorDisplayName: { type: String, default: "" },
+      postedAt: { type: Date, default: null }
     },
     resolvedBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -54,7 +61,7 @@ reportSchema.index(
   { targetPost: 1, reportedBy: 1, status: 1 },
   {
     unique: true,
-    partialFilterExpression: { status: "pending" }
+    partialFilterExpression: { status: { $in: ["pending", "processing"] } }
   }
 );
 

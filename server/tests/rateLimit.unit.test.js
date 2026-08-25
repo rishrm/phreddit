@@ -76,3 +76,23 @@ test("memory rate limiter can share one budget across API paths", () => {
   assert.equal(nextCalls, 1);
   assert.equal(limitedResponse.statusCode, 429);
 });
+
+test("memory rate limiter normalizes path casing and trailing slashes", () => {
+  const limiter = createMemoryRateLimiter({ windowMs: 1000, max: 1 });
+  let nextCalls = 0;
+
+  limiter(
+    { ip: "127.0.0.1", path: "/Login/" },
+    makeResponse(),
+    () => { nextCalls += 1; }
+  );
+  const limitedResponse = makeResponse();
+  limiter(
+    { ip: "127.0.0.1", path: "/login" },
+    limitedResponse,
+    () => { nextCalls += 1; }
+  );
+
+  assert.equal(nextCalls, 1);
+  assert.equal(limitedResponse.statusCode, 429);
+});

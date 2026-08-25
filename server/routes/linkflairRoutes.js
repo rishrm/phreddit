@@ -1,6 +1,7 @@
 import express from "express";
 import LinkFlair from "../models/LinkFlair.js";
 import { requireLogin } from "../middleware/auth.js";
+import { requireLength } from "../utils/validation.js";
 
 const router = express.Router();
 
@@ -15,13 +16,12 @@ router.get("/", async (_req, res, next) => {
 
 router.post("/", requireLogin, async (req, res, next) => {
   try {
-    const content = String(req.body.content || "").trim();
-    if (!content) return res.status(400).json({ error: "Content is required." });
-    if (content.length > 30) {
-      return res.status(400).json({ error: "Link flair must be 30 characters or less." });
-    }
-    let linkFlair = await LinkFlair.findOne({ content });
-    if (!linkFlair) linkFlair = await LinkFlair.create({ content });
+    const content = requireLength(req.body.content, "Link flair", 30);
+    const linkFlair = await LinkFlair.findOneAndUpdate(
+      { content },
+      { $setOnInsert: { content } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
     res.status(201).json({ linkFlair });
   } catch (error) {
     next(error);

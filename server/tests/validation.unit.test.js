@@ -78,6 +78,32 @@ test("validateRegistrationInput returns all important registration validation er
   assert.ok(result.errors.length >= 2);
 });
 
+test("validateRegistrationInput rejects non-string and oversized identity fields", () => {
+  const structured = validateRegistrationInput({
+    firstName: { value: "Ava" },
+    lastName: "Stone",
+    displayName: "avastone",
+    email: "ava@example.com",
+    password: "SafePassword123!",
+    confirmPassword: "SafePassword123!"
+  });
+  assert.equal(structured.ok, false);
+  assert.ok(structured.errors.includes("First name is required."));
+
+  const oversized = validateRegistrationInput({
+    firstName: "A".repeat(51),
+    lastName: "B".repeat(51),
+    displayName: "C".repeat(51),
+    email: "ava@example.com",
+    password: "SafePassword123!",
+    confirmPassword: "SafePassword123!"
+  });
+  assert.equal(oversized.ok, false);
+  assert.ok(oversized.errors.some((message) => message.includes("First name must be 50")));
+  assert.ok(oversized.errors.some((message) => message.includes("Last name must be 50")));
+  assert.ok(oversized.errors.some((message) => message.includes("Display name must be 50")));
+});
+
 test("requireNonEmptyString reports client input errors as bad requests", () => {
   assert.equal(requireNonEmptyString("  hello  ", "Greeting"), "hello");
 
