@@ -1,7 +1,7 @@
 :root {
-  --accent: #a93600;
-  --accent-dark: #7d2800;
-  --accent-soft: #fff0e8;
+  --accent: #ff4500;
+  --accent-dark: #c93600;
+  --accent-soft: #fff1eb;
   --ink: #17191d;
   --muted: #5d6877;
   --line: #dce1e8;
@@ -95,7 +95,7 @@ button.primary,
 button.active {
   border-color: var(--accent);
   background: var(--accent);
-  color: white;
+  color: var(--ink);
 }
 
 button.primary:hover,
@@ -386,7 +386,7 @@ form label,
 .bootstrap-status button {
   margin-top: 6px;
   background: var(--accent);
-  color: white;
+  color: var(--ink);
 }
 
 .bootstrap-status button:hover {
@@ -711,7 +711,7 @@ form label,
 
 .tab.active {
   background: var(--accent);
-  color: white;
+  color: var(--ink);
 }
 
 .welcome-screen {
