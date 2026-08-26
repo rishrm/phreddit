@@ -1,12 +1,65 @@
 const configuredApiBase = import.meta.env.VITE_API_BASE_URL;
 const useProductionProxy = import.meta.env.PROD && import.meta.env.VITE_DIRECT_API !== "true";
 const API_BASE = (useProductionProxy ? "/api" : configuredApiBase || "/api").replace(/\/+$/, "");
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
-async function request(path, options = {}) {
+let csrfToken = null;
+let csrfTokenRequest = null;
+
+function captureCsrfToken(data) {
+  if (typeof data.csrfToken === "string" && data.csrfToken) {
+    csrfToken = data.csrfToken;
+  }
+}
+
+function requestError(response, data) {
+  const error = new Error(data.error || data.errors?.join(" ") || "Request failed.");
+  error.status = response.status;
+  error.code = data.code;
+  return error;
+}
+
+async function parseResponse(response) {
+  return response.json().catch(() => ({}));
+}
+
+async function getCsrfToken() {
+  if (csrfToken) return csrfToken;
+  if (csrfTokenRequest) return csrfTokenRequest;
+
+  csrfTokenRequest = (async () => {
+    try {
+      const response = await fetch(`${API_BASE}/auth/csrf`, {
+        credentials: "include"
+      });
+      const data = await parseResponse(response);
+      if (!response.ok) throw requestError(response, data);
+
+      captureCsrfToken(data);
+      if (!csrfToken) {
+        throw new Error("The server did not provide a CSRF token.");
+      }
+      return csrfToken;
+    } finally {
+      csrfTokenRequest = null;
+    }
+  })();
+
+  return csrfTokenRequest;
+}
+
+async function request(path, options = {}, allowCsrfRetry = true) {
   const { headers: suppliedHeaders, body, ...fetchOptions } = options;
   const headers = new Headers(suppliedHeaders || {});
+  const method = String(fetchOptions.method || "GET").toUpperCase();
+  const needsCsrfToken = !SAFE_METHODS.has(method);
+
   if (body !== undefined && !(body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
+  }
+
+  if (needsCsrfToken) {
+    headers.set("X-CSRF-Token", await getCsrfToken());
   }
 
   const response = await fetch(`${API_BASE}${path}`, {
@@ -16,10 +69,26 @@ async function request(path, options = {}) {
     ...(body !== undefined ? { body } : {})
   });
 
-  const data = await response.json().catch(() => ({}));
+  const data = await parseResponse(response);
+  captureCsrfToken(data);
 
   if (!response.ok) {
-    throw new Error(data.error || data.errors?.join(" ") || "Request failed.");
+    if (
+      needsCsrfToken &&
+      allowCsrfRetry &&
+      response.status === 403 &&
+      data.code === "CSRF_TOKEN_INVALID"
+    ) {
+      csrfToken = null;
+      await getCsrfToken();
+      return request(path, options, false);
+    }
+
+    throw requestError(response, data);
+  }
+
+  if (path === "/auth/logout") {
+    csrfToken = null;
   }
 
   return data;

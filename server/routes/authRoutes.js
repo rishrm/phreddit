@@ -2,6 +2,7 @@ import bcrypt from "bcrypt";
 import express from "express";
 import User from "../models/User.js";
 import { authRateLimiter } from "../middleware/rateLimit.js";
+import { ensureCsrfToken } from "../middleware/requestSecurity.js";
 import { validateRegistrationInput } from "../utils/validation.js";
 
 const router = express.Router();
@@ -51,6 +52,7 @@ router.post("/register", authRateLimiter, async (req, res, next) => {
 
     return res.status(201).json({
       message: "Account created successfully. You can now log in.",
+      csrfToken: ensureCsrfToken(req),
       user: {
         _id: user._id,
         displayName: user.displayName
@@ -82,9 +84,11 @@ router.post("/login", authRateLimiter, async (req, res, next) => {
 
     await regenerateSession(req);
     req.session.userId = String(user._id);
+    const csrfToken = ensureCsrfToken(req);
 
     return res.json({
       message: "Logged in successfully.",
+      csrfToken,
       user
     });
   } catch (error) {
@@ -109,9 +113,13 @@ router.post("/logout", (req, res) => {
 
 router.get("/me", async (req, res) => {
   if (!req.currentUser) {
-    return res.json({ user: null });
+    return res.json({ user: null, csrfToken: ensureCsrfToken(req) });
   }
-  return res.json({ user: req.currentUser });
+  return res.json({ user: req.currentUser, csrfToken: ensureCsrfToken(req) });
+});
+
+router.get("/csrf", (req, res) => {
+  res.json({ csrfToken: ensureCsrfToken(req) });
 });
 
 export default router;

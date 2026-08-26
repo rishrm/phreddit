@@ -31,6 +31,7 @@ export default defineConfig({
         SESSION_SECRET: "playwright-test-secret",
         NODE_ENV: "test",
         ENABLE_E2E_RESET: "true",
+        ENABLE_CSRF: "true",
         DISABLE_RATE_LIMIT: "true"
       }
     },

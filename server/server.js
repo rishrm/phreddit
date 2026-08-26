@@ -16,7 +16,10 @@ import reportRoutes from "./routes/reportRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import { attachCurrentUser } from "./middleware/auth.js";
 import { apiRateLimiter } from "./middleware/rateLimit.js";
-import { createTrustedOriginGuard } from "./middleware/requestSecurity.js";
+import {
+  createTrustedOriginGuard,
+  csrfProtection
+} from "./middleware/requestSecurity.js";
 import { setIo } from "./realtime.js";
 import { ensureConfiguredAdmin } from "./utils/adminBootstrap.js";
 import Comment from "./models/Comment.js";
@@ -111,6 +114,7 @@ export function createApp({ useSessionStore = true } = {}) {
   }
 
   app.use(session(sessionConfig));
+  app.use("/api", csrfProtection);
   app.use(attachCurrentUser);
 
   app.get("/api/health", (_req, res) => {

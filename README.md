@@ -31,7 +31,7 @@ Visitors can browse as a guest or register a new account.
 - Post reporting with duplicate-report protection, an admin moderation queue, and optional resolution notes
 - Admin user list, viewing another user's profile, and cascade user deletion behind an accessible confirm dialog
 - Cascade deletion for communities, posts, comments, replies, and user-owned content
-- Session hardening: session ID regeneration on login, trusted-origin CSRF defense, helmet headers, CORS allowlist, and bounded global/auth rate limiting
+- Session hardening: session ID regeneration on login, session-bound CSRF tokens, trusted-origin checks, helmet headers, CORS allowlist, and bounded global/auth rate limiting
 - Responsive layout, keyboard-visible focus states, loading/empty/error states, and toast notifications with distinct success/error styling
 - Unit (server + client), integration, and Playwright e2e tests in GitHub Actions, plus repository-level CodeQL analysis
 
@@ -55,7 +55,7 @@ phreddit/
 │   └── e2e/              # Playwright specs
 ├── server/
 │   ├── bench/            # dependency-free benchmark + volume seeder
-│   ├── middleware/        # auth, rate limiting
+│   ├── middleware/        # auth, CSRF/origin checks, rate limiting
 │   ├── models/           # Mongoose schemas + indexes
 │   ├── routes/           # REST endpoints
 │   ├── tests/            # node:test unit + integration suites
@@ -94,14 +94,14 @@ The Vite dev server proxies both `/api` and the `/socket.io` WebSocket to the AP
 
 ## Demo Accounts
 
-The optional seed command creates one administrator plus three sample users and prints the generated demo password. Set `DEMO_PASSWORD` explicitly when you need stable local/demo credentials.
+The optional seed command creates one administrator plus three sample users. Both passwords are required inputs and are never printed; keep them in a password manager or hosting secret store.
 
 | Role | Email | Password |
 |---|---|---|
 | Admin | Value passed to `init.js` | `ADMIN_PASSWORD` |
-| User | `alex@example.com` | `DEMO_PASSWORD` or generated value |
-| User | `jamie@example.com` | `DEMO_PASSWORD` or generated value |
-| User | `taylor@example.com` | `DEMO_PASSWORD` or generated value |
+| User | `alex@example.com` | `DEMO_PASSWORD` |
+| User | `jamie@example.com` | `DEMO_PASSWORD` |
+| User | `taylor@example.com` | `DEMO_PASSWORD` |
 
 `server/init.js` erases the selected database and refuses to run unless `CONFIRM_DATABASE_RESET` exactly matches that database name.
 
@@ -116,6 +116,8 @@ Server (`server/.env`):
 | `SESSION_SECRET` | Session signing secret (set a long random value) | dev fallback |
 | `CLIENT_ORIGIN` | Comma-separated allowed CORS origins | localhost:5173 |
 | `ADMIN_EMAIL` | Existing administrator to verify at startup (never auto-promotes) | unset |
+| `ADMIN_PASSWORD`, `DEMO_PASSWORD` | Required only by the destructive demo-data seed; never logged | unset |
+| `CONFIRM_DATABASE_RESET` | Database name required to authorize the destructive seed | unset |
 | `SESSION_COOKIE_SAMESITE` | Cookie same-site policy; Vercel proxy deployments use `lax` | `lax` |
 | `SESSION_COOKIE_SECURE` | `true` in production (HTTPS) | `false` |
 | `SESSION_TTL_MS` | Browser/session-store lifetime in milliseconds | 7 days |
@@ -154,10 +156,10 @@ Server extras: `npm --prefix server run admin:promote` (explicit administrator p
 |---|---|---|---|
 | Server unit (node:test) | `npm --prefix server run test:unit` | No | lint-and-unit |
 | Client unit (Vitest + RTL) | `npm --prefix client run test:unit` | No | lint-and-unit |
-| Server integration (25 supertest tests, disposable DB per file) | `npm run test:int` | Yes | integration |
+| Server integration (26 supertest tests, disposable DB per data suite) | `npm run test:int` | Yes | integration |
 | End-to-end (4 Playwright browser flows) | `npm run test:e2e` | Yes | e2e |
 
-The current matrix contains 75 automated tests: 22 server unit, 25 server integration, 24 client unit, and 4 Playwright flows. Integration tests spin up Express in-process against a throwaway database and run in CI against a MongoDB replica set with transactions forced. Regression coverage includes multi-thread Active sorting, membership-aware pagination, private vote serialization, authoritative cascade deletion, moderation-claim races, and vote/reputation lifecycles. Playwright adds desktop creation/profile/voting flows, a two-browser realtime check, and mobile keyboard/overflow smoke coverage.
+The current matrix contains 81 automated tests: 24 server unit, 26 server integration, 27 client unit, and 4 Playwright flows. Integration tests spin up Express in-process against throwaway databases and run in CI against a MongoDB replica set with transactions forced. Regression coverage includes session-bound CSRF enforcement, multi-thread Active sorting, membership-aware pagination, private vote serialization, authoritative cascade deletion, moderation-claim races, and vote/reputation lifecycles. Playwright runs with CSRF enforcement enabled and adds desktop creation/profile/voting flows, a two-browser realtime check, and mobile keyboard/overflow smoke coverage.
 
 Contributing with an AI coding agent? Repo commands and invariants live in [AGENTS.md](AGENTS.md).
 
@@ -188,7 +190,7 @@ The client and API deploy separately.
 
 **API — Render (free):**
 1. Push this repo to GitHub, then in Render choose **New → Blueprint** and select the repo (`render.yaml` configures the service).
-2. Set `MONGO_URI` to the Atlas string and `CLIENT_ORIGIN` to your exact Vercel production URL. The blueprint sets HTTPS cookies, proxy trust, session lifetime, and the API rate limit. Unsafe production requests still require a matching `Origin` as a second CSRF boundary.
+2. Set `MONGO_URI` to the Atlas string and `CLIENT_ORIGIN` to your exact Vercel production URL. The blueprint sets HTTPS cookies, proxy trust, session lifetime, and the API rate limit. Unsafe production requests require both a session-bound CSRF token and a matching `Origin`.
 3. Verify `https://<api>.onrender.com/api/health` returns `{ "ok": true }`. Register the production owner through the app, then promote it explicitly with `MONGO_URI=<atlas-uri> ADMIN_EMAIL=<email> CONFIRM_ADMIN_PROMOTION=<email> npm --prefix server run admin:promote`. Set the same `ADMIN_EMAIL` in Render and redeploy; startup verifies it but never changes privileges.
 4. To replace an empty database with sample data, run the guarded seed command from Setup with `MONGO_URI` pointed at Atlas and `CONFIRM_DATABASE_RESET` set to the Atlas database name. It intentionally erases that database first.
 
@@ -205,7 +207,7 @@ The client and API deploy separately.
 - **Comments:** fetched flat with one indexed query (`{ post: 1, createdAt: -1 }`) and assembled iteratively in memory, so nesting depth is not truncated by recursive populate. A 5,000-comment response cap prevents unbounded memory use and is surfaced to the UI.
 - **Search:** MongoDB text indexes on posts and comments; matching ids are resolved first because `$text` cannot appear inside `$or`.
 - **Listings:** pagination and all three sorts are computed database-side; "Active" uses an aggregation with a comments `$lookup`. Page-number pagination is intentional at this scale; cursor pagination is the documented next step if feeds grow unbounded.
-- **Sessions:** stored in MongoDB via connect-mongo; hashes are excluded by default at the Mongoose schema boundary, and session IDs regenerate on login. Vercel proxies REST requests through same-origin `/api`, allowing `SameSite=Lax`; unsafe requests must also come from `CLIENT_ORIGIN`. Registration intentionally returns to Welcome before login. The `x-test-user-id` header is inert outside `NODE_ENV=test`.
+- **Sessions:** stored in MongoDB via connect-mongo; hashes are excluded by default at the Mongoose schema boundary, and session IDs regenerate on login. The client bootstraps a random synchronizer token stored only in the server session and sends it on every unsafe request, refreshing once after expiration. Vercel proxies REST requests through same-origin `/api`, allowing `SameSite=Lax`; unsafe requests must also come from `CLIENT_ORIGIN`. Registration intentionally returns to Welcome before login. The `x-test-user-id` header is inert outside `NODE_ENV=test`.
 - **Transactions and cascade deletes:** supported replica sets use MongoDB transactions for votes, reputation, ownership references, memberships, moderation, and children-first cascade deletion. Standalone local MongoDB uses the same idempotent operations without a transaction; CI forces the replica-set path.
 - **Markdown** is rendered client-side with `marked` and sanitized with DOMPurify (scripts, event handlers, and `javascript:` URLs are stripped; links open in a new tab with `rel="noopener"`).
 
@@ -221,7 +223,7 @@ The release branch includes fixes found through adversarial review rather than h
 - Deleting a voter reverses their reputation impact before removing vote records.
 - User-content limits and Markdown hyperlink rules are enforced by both forms and the API.
 - Duplicate-key races return a stable `409`, production requires a session secret, and auth limiter storage is bounded.
-- A global per-IP request budget protects every API route; unsafe methods also enforce a trusted browser origin before parsing request bodies.
+- A global per-IP request budget protects every API route; unsafe methods require a constant-time-validated session CSRF token and a trusted browser origin.
 - Destructive dialogs trap and restore focus; profile tabs support arrow, Home, and End keys.
 
 ## Portfolio Talking Points
@@ -231,7 +233,7 @@ The release branch includes fixes found through adversarial review rather than h
 - Replaced depth-limited nested populate with a capped flat fetch + iterative tree build, turning recursive population into one indexed comment query.
 - Added Socket.IO live updates with a no-op-in-tests emitter so the realtime layer never leaks into the test suite.
 - Closed a test-only auth header behind `NODE_ENV=test` after identifying it as a production auth bypass during a security review.
-- Added layered request security after CodeQL review: global throttling, strict unsafe-request origin checks, linear-time validators, and explicit database-query normalization.
+- Added layered request security after CodeQL review: global throttling, session-bound synchronizer tokens, strict unsafe-request origin checks, linear-time validators, and explicit database-query normalization.
 
 ## Assignment Contribution
 
