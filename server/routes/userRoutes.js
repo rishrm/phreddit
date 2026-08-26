@@ -54,7 +54,9 @@ router.get("/", requireLogin, requireAdmin, async (_req, res, next) => {
   try {
     const users = await User.find({
       isAdmin: false
-    }).sort({ displayName: 1 });
+    })
+      .select("displayName email reputation createdAt")
+      .sort({ displayName: 1 });
     return res.json({ users });
   } catch (error) {
     next(error);

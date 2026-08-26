@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import supertest from "supertest";
+import User from "../models/User.js";
 import { createApp } from "../server.js";
 import {
   clearTestDb,
@@ -49,6 +50,13 @@ test("registration returns to login flow, sessions persist, logout clears, login
   assert.equal(registered.body.user.email, undefined);
   assert.equal(registered.body.user.passwordHash, undefined);
 
+  const normallySelectedUser = await User.findOne({ email }).lean();
+  const explicitlySelectedUser = await User.findOne({ email })
+    .select("+passwordHash")
+    .lean();
+  assert.equal(Object.hasOwn(normallySelectedUser, "passwordHash"), false);
+  assert.equal(typeof explicitlySelectedUser.passwordHash, "string");
+
   // Registration deliberately does not start a session; the user logs in next.
   const meAfterRegister = await agent.get("/api/auth/me");
   assert.equal(meAfterRegister.status, 200);
@@ -65,6 +73,7 @@ test("registration returns to login flow, sessions persist, logout clears, login
 
   const meAfterLogin = await agent.get("/api/auth/me");
   assert.equal(meAfterLogin.body.user.email, email);
+  assert.equal(meAfterLogin.body.user.passwordHash, undefined);
 
   const loggedOut = await agent.post("/api/auth/logout");
   assert.equal(loggedOut.status, 200);

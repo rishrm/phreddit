@@ -13,7 +13,7 @@ export default function CreateCommunity() {
 
   if (!user) {
     return (
-      <main className="card">
+      <main className="card form-page">
         <h1>New Community</h1>
         <p>You must be logged in to create communities.</p>
         <button onClick={() => navigate("/home")}>Back Home</button>
@@ -38,7 +38,7 @@ export default function CreateCommunity() {
   }
 
   return (
-    <main className="card" aria-label="New Community Page">
+    <main className="card form-page" aria-label="New Community Page">
       <h1>New Community</h1>
       <form onSubmit={submit}>
         <label htmlFor="communityName">Community name*</label>
@@ -60,7 +60,7 @@ export default function CreateCommunity() {
           onChange={(event) => setForm({ ...form, description: event.target.value })}
         />
         <div className="action-row">
-          <button type="submit" disabled={submitting}>
+          <button className="primary" type="submit" disabled={submitting}>
             {submitting ? "Creating..." : "Submit"}
           </button>
           <button type="button" onClick={() => navigate("/home")}>Cancel</button>

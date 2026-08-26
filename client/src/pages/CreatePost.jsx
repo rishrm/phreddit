@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import { api } from "../api/client.js";
 
@@ -15,31 +15,49 @@ export default function CreatePost() {
   const [communities, setCommunities] = useState([]);
   const [flairs, setFlairs] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+  const [loadingOptions, setLoadingOptions] = useState(true);
+  const [loadError, setLoadError] = useState("");
+
+  const loadOptions = useCallback(async (signal) => {
+    try {
+      setLoadingOptions(true);
+      setLoadError("");
+      const [communityData, flairData] = await Promise.all([
+        api.getCommunities({ signal }),
+        api.getLinkFlairs({ signal }).catch((error) => {
+          if (error.name === "AbortError") throw error;
+          return { linkFlairs: [] };
+        })
+      ]);
+      const list = communityData.communities || [];
+      setCommunities(list);
+      if (list.length > 0) {
+        setForm((current) => ({ ...current, community: current.community || list[0]._id }));
+      }
+      const flairList = Array.isArray(flairData?.linkFlairs)
+        ? flairData.linkFlairs
+        : Array.isArray(flairData)
+          ? flairData
+          : [];
+      setFlairs(flairList);
+    } catch (error) {
+      if (error.name === "AbortError") return;
+      setLoadError(error.message);
+      showMessage(error.message, "error");
+    } finally {
+      if (!signal?.aborted) setLoadingOptions(false);
+    }
+  }, [showMessage]);
 
   useEffect(() => {
-    Promise.all([
-      api.getCommunities(),
-      api.getLinkFlairs().catch(() => ({ linkFlairs: [] }))
-    ])
-      .then(([communityData, flairData]) => {
-        const list = communityData.communities || [];
-        setCommunities(list);
-        if (list.length > 0) {
-          setForm((current) => ({ ...current, community: current.community || list[0]._id }));
-        }
-        const flairList = Array.isArray(flairData?.linkFlairs)
-          ? flairData.linkFlairs
-          : Array.isArray(flairData)
-            ? flairData
-            : [];
-        setFlairs(flairList);
-      })
-      .catch((error) => showMessage(error.message, "error"));
-  }, [showMessage]);
+    const controller = new AbortController();
+    void loadOptions(controller.signal);
+    return () => controller.abort();
+  }, [loadOptions]);
 
   if (!user) {
     return (
-      <main className="card">
+      <main className="card form-page">
         <h1>Create Post</h1>
         <p>You must be logged in to create posts.</p>
         <button onClick={() => navigate("/home")}>Back Home</button>
@@ -62,6 +80,10 @@ export default function CreatePost() {
       showMessage("Content is required.", "error");
       return;
     }
+    if (form.content.length > 20000) {
+      showMessage("Content must be 20,000 characters or less.", "error");
+      return;
+    }
     if (form.newFlair && form.newFlair.length > 30) {
       showMessage("New link flair must be 30 characters or less.", "error");
       return;
@@ -69,18 +91,12 @@ export default function CreatePost() {
 
     try {
       setSubmitting(true);
-      let linkFlairId = form.linkFlair || null;
-
-      if (form.newFlair.trim()) {
-        const data = await api.createLinkFlair({ content: form.newFlair.trim() });
-        linkFlairId = (data.linkFlair?._id) || data._id;
-      }
-
       await api.createPost({
         community: form.community,
         title: form.title.trim(),
         content: form.content.trim(),
-        linkFlair: linkFlairId
+        linkFlair: form.linkFlair || null,
+        ...(form.newFlair.trim() ? { newFlair: form.newFlair.trim() } : {})
       });
       refreshData();
       showMessage("Post created successfully.", "success");
@@ -93,15 +109,21 @@ export default function CreatePost() {
   }
 
   return (
-    <main className="card" aria-label="Create Post Page">
+    <main className="card form-page" aria-label="Create Post Page">
       <h1>Create Post</h1>
+      {loadError && (
+        <p className="error-state" role="alert">
+          {loadError}{" "}
+          <button type="button" onClick={() => loadOptions()}>Retry</button>
+        </p>
+      )}
       <form onSubmit={submit}>
         <label htmlFor="postCommunity">Community*</label>
         <select
           id="postCommunity"
           value={form.community}
           onChange={(event) => setForm({ ...form, community: event.target.value })}
-          disabled={communities.length === 0}
+          disabled={loadingOptions || communities.length === 0}
         >
           {communities.length === 0 && <option value="">No communities available</option>}
           {communities.map((community) => (
@@ -148,12 +170,17 @@ export default function CreatePost() {
         <textarea
           id="postContent"
           placeholder="Post content"
+          maxLength={20000}
           required
           value={form.content}
           onChange={(event) => setForm({ ...form, content: event.target.value })}
         />
         <div className="action-row">
-          <button type="submit" disabled={communities.length === 0 || submitting}>
+          <button
+            className="primary"
+            type="submit"
+            disabled={loadingOptions || communities.length === 0 || submitting}
+          >
             {submitting ? "Publishing..." : "Submit"}
           </button>
           <button type="button" onClick={() => navigate("/home")}>Cancel</button>

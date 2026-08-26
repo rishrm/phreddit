@@ -12,6 +12,8 @@ services:
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
+      - key: NODE_ENV
+        value: production
       - key: MONGO_URI
         sync: false
       - key: CLIENT_ORIGIN
@@ -21,9 +23,11 @@ services:
       - key: SESSION_SECRET
         generateValue: true
       - key: SESSION_COOKIE_SAMESITE
-        value: none
+        value: lax
       - key: SESSION_COOKIE_SECURE
         value: "true"
+      - key: SESSION_TTL_MS
+        value: "604800000"
       - key: TRUST_PROXY
         value: "true"
       - key: API_RATE_LIMIT_WINDOW_MS

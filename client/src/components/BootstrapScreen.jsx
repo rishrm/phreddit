@@ -6,7 +6,7 @@ const CONTENT = {
   waking: {
     title: "Waking the demo server",
     description:
-      "The free demo server was idle. Its first request can take up to a minute.",
+      "The demo server was idle. Its first request can take up to a minute.",
     detail: "Once it wakes, the rest of your visit will be fast."
   },
   error: {

@@ -1,26 +1,9 @@
 import { test, expect } from "@playwright/test";
+import { registerAndLogin, resetE2eDatabase } from "./helpers.js";
 
 const navigationTimeout = 15000;
 
-async function registerUser(page, { email, displayName, password }) {
-  await page.goto("/");
-  await page.getByRole("button", { name: /register/i }).click();
-
-  await page.locator("#firstName").fill("Test");
-  await page.locator("#lastName").fill("User");
-  await page.locator("#email").fill(email);
-  await page.locator("#displayName").fill(displayName);
-  await page.locator("#password").fill(password);
-  await page.locator("#confirmPassword").fill(password);
-  await page.getByRole("button", { name: /sign up/i }).click();
-
-  await expect(page.getByRole("heading", { name: /welcome to phreddit/i })).toBeVisible();
-  await page.getByRole("button", { name: /login/i }).click();
-  await page.locator("#loginEmail").fill(email);
-  await page.locator("#loginPassword").fill(password);
-  await page.getByRole("button", { name: /^login$/i }).click();
-  await expect(page.getByRole("heading", { name: /all posts/i })).toBeVisible();
-}
+test.beforeEach(async ({ request }) => resetE2eDatabase(request));
 
 async function createCommunity(page, communityName) {
   await page.getByRole("button", { name: /create community/i }).click();
@@ -67,7 +50,7 @@ test("core flows: content creation, self-vote gate, sorting, profile, and two-us
   const commentText = `Activity comment ${stamp}`;
 
   // --- User A: author ---
-  await registerUser(page, { email: authorEmail, displayName: authorName, password });
+  await registerAndLogin(page, { email: authorEmail, displayName: authorName, password });
   await createCommunity(page, communityName);
   await createPost(page, {
     title: activeTitle,
@@ -79,12 +62,12 @@ test("core flows: content creation, self-vote gate, sorting, profile, and two-us
     content: "This post should stay below active threads."
   });
 
-  // Authors cannot vote on their own posts: buttons are disabled with a hint.
+  // Authors can focus the vote control and hear why it is unavailable.
   await page.getByRole("link", { name: activeTitle }).click();
   await expect(page.getByRole("heading", { name: activeTitle })).toBeVisible();
   const ownUpvote = page.getByRole("button", { name: /upvote/i });
-  await expect(ownUpvote).toBeDisabled();
-  await expect(ownUpvote).toHaveAttribute("title", /own post/i);
+  await expect(ownUpvote).toHaveAttribute("aria-disabled", "true");
+  await expect(ownUpvote).toHaveAccessibleDescription(/own post/i);
 
   await page.getByRole("button", { name: /^save$/i }).click();
   await expect(page.getByRole("button", { name: /^saved$/i })).toBeVisible();
@@ -127,7 +110,7 @@ test("core flows: content creation, self-vote gate, sorting, profile, and two-us
   // --- User B: voter ---
   await page.getByRole("button", { name: /logout/i }).click();
   await expect(page.getByRole("heading", { name: /welcome to phreddit/i })).toBeVisible();
-  await registerUser(page, { email: voterEmail, displayName: voterName, password });
+  await registerAndLogin(page, { email: voterEmail, displayName: voterName, password });
 
   await page.getByRole("link", { name: editedTitle }).click();
   await expect(page.getByRole("heading", { name: editedTitle })).toBeVisible();
@@ -135,6 +118,7 @@ test("core flows: content creation, self-vote gate, sorting, profile, and two-us
   const upvote = page.getByRole("button", { name: /upvote/i });
   const downvote = page.getByRole("button", { name: /downvote/i });
   await expect(upvote).toBeEnabled();
+  await expect(upvote).toHaveAttribute("aria-disabled", "false");
 
   // Add a vote.
   await upvote.click();

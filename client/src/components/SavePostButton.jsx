@@ -13,15 +13,17 @@ export default function SavePostButton({ user, postId, showMessage, onUserRefres
   if (!user) return null;
 
   async function toggleSaved() {
+    if (isSaving) return;
+    const nextSaved = !isSaved;
     try {
       setIsSaving(true);
       const data = isSaved
         ? await api.unsavePost(postId)
         : await api.savePost(postId);
 
-      setIsSaved(!isSaved);
+      setIsSaved(nextSaved);
       showMessage(data.message, "success");
-      onUserRefresh?.();
+      await onUserRefresh?.();
     } catch (error) {
       showMessage(error.message, "error");
     } finally {

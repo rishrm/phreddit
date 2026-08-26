@@ -14,16 +14,18 @@ export async function ensureConfiguredAdmin({
     throw new Error("ADMIN_EMAIL must be a valid email address.");
   }
 
-  const result = await userModel.updateOne(
-    { email },
-    {
-      $set: { isAdmin: true },
-      $max: { reputation: 1000 }
-    }
-  );
+  let query = userModel.findOne({ email });
+  if (typeof query?.select === "function") {
+    query = query.select("isAdmin");
+  }
+  const user = await query;
 
-  if (result.matchedCount === 0) {
+  if (!user) {
     return { configured: false, reason: "not-found" };
+  }
+
+  if (!user.isAdmin) {
+    return { configured: false, reason: "not-admin" };
   }
 
   return { configured: true };

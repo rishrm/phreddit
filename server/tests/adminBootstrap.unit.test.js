@@ -7,7 +7,7 @@ test("admin bootstrap is inert when ADMIN_EMAIL is not configured", async () => 
   const result = await ensureConfiguredAdmin({
     adminEmail: "",
     userModel: {
-      async updateOne() {
+      async findOne() {
         called = true;
       }
     }
@@ -24,34 +24,41 @@ test("admin bootstrap rejects an invalid configured email", async () => {
   );
 });
 
-test("admin bootstrap promotes an existing account and raises its reputation floor", async () => {
+test("admin bootstrap verifies an existing administrator without changing privileges", async () => {
   let receivedFilter;
-  let receivedUpdate;
   const result = await ensureConfiguredAdmin({
     adminEmail: "  Owner@Example.com ",
     userModel: {
-      async updateOne(filter, update) {
+      async findOne(filter) {
         receivedFilter = filter;
-        receivedUpdate = update;
-        return { matchedCount: 1 };
+        return { isAdmin: true };
       }
     }
   });
 
   assert.deepEqual(receivedFilter, { email: "owner@example.com" });
-  assert.deepEqual(receivedUpdate, {
-    $set: { isAdmin: true },
-    $max: { reputation: 1000 }
-  });
   assert.deepEqual(result, { configured: true });
+});
+
+test("admin bootstrap refuses to promote an ordinary account", async () => {
+  const result = await ensureConfiguredAdmin({
+    adminEmail: "owner@example.com",
+    userModel: {
+      async findOne() {
+        return { isAdmin: false };
+      }
+    }
+  });
+
+  assert.deepEqual(result, { configured: false, reason: "not-admin" });
 });
 
 test("admin bootstrap reports when the configured account does not exist", async () => {
   const result = await ensureConfiguredAdmin({
     adminEmail: "owner@example.com",
     userModel: {
-      async updateOne() {
-        return { matchedCount: 0 };
+      async findOne() {
+        return null;
       }
     }
   });

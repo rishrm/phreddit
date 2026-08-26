@@ -5,7 +5,7 @@ import { reputationDeltaForVote } from "./voting.js";
 // Each branch is a single conditional findOneAndUpdate, so concurrent requests
 // cannot double-count: a request whose precondition no longer holds simply
 // falls through, and the final branch's `$ne` guard rejects duplicate inserts.
-export async function applyVote(Model, docId, userId, voteType) {
+export async function applyVote(Model, docId, userId, voteType, { session = null } = {}) {
   const incField = voteType === "upvote" ? "upvotes" : "downvotes";
   const decField = voteType === "upvote" ? "downvotes" : "upvotes";
   const otherType = voteType === "upvote" ? "downvote" : "upvote";
@@ -13,7 +13,7 @@ export async function applyVote(Model, docId, userId, voteType) {
   const removed = await Model.findOneAndUpdate(
     { _id: docId, votedBy: { $elemMatch: { user: userId, voteType } } },
     { $pull: { votedBy: { user: userId } }, $inc: { [incField]: -1 } },
-    { new: true }
+    { new: true, ...(session ? { session } : {}) }
   );
   if (removed) {
     return {
@@ -29,7 +29,7 @@ export async function applyVote(Model, docId, userId, voteType) {
       $set: { "votedBy.$.voteType": voteType },
       $inc: { [incField]: 1, [decField]: -1 }
     },
-    { new: true }
+    { new: true, ...(session ? { session } : {}) }
   );
   if (switched) {
     return {
@@ -42,7 +42,7 @@ export async function applyVote(Model, docId, userId, voteType) {
   const added = await Model.findOneAndUpdate(
     { _id: docId, "votedBy.user": { $ne: userId } },
     { $push: { votedBy: { user: userId, voteType } }, $inc: { [incField]: 1 } },
-    { new: true }
+    { new: true, ...(session ? { session } : {}) }
   );
   if (added) {
     return {

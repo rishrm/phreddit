@@ -9,6 +9,7 @@ import { applyVote } from "../utils/voteService.js";
 import { presentVotable } from "../utils/serialize.js";
 import { requireValidObjectId, requireValidUserContent } from "../utils/validation.js";
 import { emitPostUpdated } from "../realtime.js";
+import { runAtomic, sessionOptions, withSession } from "../utils/transactions.js";
 
 const router = express.Router();
 
@@ -17,68 +18,69 @@ router.post("/", requireLogin, async (req, res, next) => {
     const content = requireValidUserContent(req.body.content, "Comment content", 500);
     const postId = requireValidObjectId(req.body.post, "Post");
 
-    const post = await Post.findById(postId);
-    if (!post) {
-      return res.status(404).json({
-        error: "Post not found."
-      });
-    }
-
     const parentCommentId = req.body.parentComment
       ? requireValidObjectId(req.body.parentComment, "Parent comment")
       : null;
-    const parentComment = parentCommentId
-      ? await Comment.findById(parentCommentId)
-      : null;
+    const result = await runAtomic(async (session) => {
+      const post = await withSession(Post.findById(postId).select("_id"), session);
+      if (!post) return { error: "Post not found.", status: 404 };
 
-    if (req.body.parentComment && !parentComment) {
-      return res.status(404).json({
-        error: "Parent comment not found."
-      });
-    }
-
-    if (parentComment && String(parentComment.post) !== String(post._id)) {
-      return res.status(400).json({
-        error: "Parent comment does not belong to this post."
-      });
-    }
-
-    const comment = await Comment.create({
-      content,
-      commentedBy: req.currentUser._id,
-      post: post._id,
-      parentComment: parentComment?._id || null,
-      replies: [],
-      upvotes: 0,
-      downvotes: 0,
-      votedBy: []
-    });
-
-    if (parentComment) {
-      await Comment.findByIdAndUpdate(parentComment._id, {
-        $addToSet: {
-          replies: comment._id
-        }
-      });
-    } else {
-      await Post.findByIdAndUpdate(post._id, {
-        $addToSet: {
-          comments: comment._id
-        }
-      });
-    }
-
-    await User.findByIdAndUpdate(req.currentUser._id, {
-      $addToSet: {
-        createdComments: comment._id
+      const parentComment = parentCommentId
+        ? await withSession(Comment.findById(parentCommentId).select("_id post"), session)
+        : null;
+      if (parentCommentId && !parentComment) {
+        return { error: "Parent comment not found.", status: 404 };
       }
+      if (parentComment && String(parentComment.post) !== String(post._id)) {
+        return { error: "Parent comment does not belong to this post.", status: 400 };
+      }
+
+      const [comment] = await Comment.create(
+        [{
+          content,
+          commentedBy: req.currentUser._id,
+          post: post._id,
+          parentComment: parentComment?._id || null,
+          replies: [],
+          upvotes: 0,
+          downvotes: 0,
+          votedBy: []
+        }],
+        sessionOptions(session)
+      );
+
+      const parentUpdate = parentComment
+        ? Comment.updateOne(
+            { _id: parentComment._id, post: post._id },
+            { $addToSet: { replies: comment._id } },
+            sessionOptions(session)
+          )
+        : Post.updateOne(
+            { _id: post._id },
+            { $addToSet: { comments: comment._id } },
+            sessionOptions(session)
+          );
+      const referenceUpdate = await parentUpdate;
+      const userUpdate = await User.updateOne(
+        { _id: req.currentUser._id },
+        { $addToSet: { createdComments: comment._id } },
+        sessionOptions(session)
+      );
+      if (referenceUpdate.matchedCount !== 1 || userUpdate.matchedCount !== 1) {
+        throw new Error("Comment references could not be updated.");
+      }
+      return { comment, postId: post._id };
     });
 
-    emitPostUpdated(post._id);
+    if (result.error) {
+      return res.status(result.status).json({ error: result.error });
+    }
+
+    emitPostUpdated(result.postId);
 
     return res.status(201).json({
       message: "Comment created successfully.",
-      comment: presentVotable(comment, req.currentUser._id)
+      comment: presentVotable(result.comment, req.currentUser._id)
     });
   } catch (error) {
     next(error);
@@ -167,34 +169,48 @@ router.post("/:id/vote", requireLogin, async (req, res, next) => {
       });
     }
 
-    const result = await applyVote(Comment, comment._id, req.currentUser._id, voteType);
-    if (!result) {
+    const voteResult = await runAtomic(async (session) => {
+      const currentComment = await withSession(Comment.findById(comment._id), session);
+      if (!currentComment) return null;
+      const result = await applyVote(
+        Comment,
+        currentComment._id,
+        req.currentUser._id,
+        voteType,
+        { session }
+      );
+      if (!result) return { conflict: true };
+
+      let commenterReputation = null;
+      if (result.repDelta !== 0) {
+        const updatedCommenter = await User.findByIdAndUpdate(
+          currentComment.commentedBy,
+          { $inc: { reputation: result.repDelta } },
+          { new: true, ...sessionOptions(session) }
+        );
+        if (!updatedCommenter) throw new Error("Comment author no longer exists.");
+        commenterReputation = updatedCommenter.reputation;
+      }
+      return { ...result, commenterReputation, postId: currentComment.post };
+    });
+
+    if (!voteResult || voteResult.conflict) {
       return res.status(409).json({
         error: "Vote could not be applied. Please try again."
       });
     }
 
-    let commenterReputation = null;
-    if (result.repDelta !== 0) {
-      const updatedCommenter = await User.findByIdAndUpdate(
-        comment.commentedBy,
-        { $inc: { reputation: result.repDelta } },
-        { new: true }
-      );
-      commenterReputation = updatedCommenter?.reputation ?? null;
-    }
-
-    emitPostUpdated(comment.post);
+    emitPostUpdated(voteResult.postId);
 
     return res.json({
       message:
-        result.action === "removed"
+        voteResult.action === "removed"
           ? "Vote removed."
-          : result.action === "switched"
+          : voteResult.action === "switched"
             ? "Vote changed."
             : "Vote recorded successfully.",
-      comment: presentVotable(result.doc, req.currentUser._id),
-      commenterReputation
+      comment: presentVotable(voteResult.doc, req.currentUser._id),
+      commenterReputation: voteResult.commenterReputation
     });
   } catch (error) {
     next(error);

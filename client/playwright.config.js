@@ -15,26 +15,30 @@ export default defineConfig({
     : [["list"], ["html", { open: "never" }]],
   use: {
     baseURL: "http://127.0.0.1:5173",
-    trace: "retain-on-failure"
+    trace: "retain-on-failure",
+    screenshot: "only-on-failure"
   },
   webServer: [
     {
       command: "npm --prefix ../server start",
       url: "http://127.0.0.1:8000/api/health",
       timeout: 120000,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
       env: {
         ...process.env,
         MONGO_URI: e2eMongoUri,
         PORT: "8000",
-        SESSION_SECRET: "playwright-test-secret"
+        SESSION_SECRET: "playwright-test-secret",
+        NODE_ENV: "test",
+        ENABLE_E2E_RESET: "true",
+        DISABLE_RATE_LIMIT: "true"
       }
     },
     {
       command: "npm run dev -- --host 127.0.0.1",
       url: "http://127.0.0.1:5173",
       timeout: 120000,
-      reuseExistingServer: !process.env.CI
+      reuseExistingServer: false
     }
   ],
   projects: [

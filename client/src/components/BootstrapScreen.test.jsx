@@ -14,7 +14,7 @@ describe("BootstrapScreen", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
-  it("explains a free-tier cold start", () => {
+  it("explains an idle-server cold start", () => {
     render(<BootstrapScreen phase="waking" onRetry={vi.fn()} />);
 
     expect(

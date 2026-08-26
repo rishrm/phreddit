@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   commentCountOf,
+  flattenComments,
   isPostSavedByUser,
   sortComments,
   splitPostsByMembership
@@ -88,5 +89,31 @@ describe("sortComments", () => {
     const before = JSON.stringify(tree);
     sortComments(tree, "top");
     expect(JSON.stringify(tree)).toBe(before);
+  });
+
+  it("sorts and flattens very deep threads without recursive stack overflow", () => {
+    const root = {
+      _id: "comment-0",
+      createdAt: "2024-01-01T00:00:00Z",
+      replies: []
+    };
+    let cursor = root;
+    for (let depth = 1; depth <= 3000; depth += 1) {
+      const reply = {
+        _id: `comment-${depth}`,
+        createdAt: "2024-01-01T00:00:00Z",
+        replies: []
+      };
+      cursor.replies.push(reply);
+      cursor = reply;
+    }
+
+    expect(commentCountOf({ comments: [root] })).toBe(3001);
+    const flattened = flattenComments(sortComments([root]));
+    expect(flattened).toHaveLength(3001);
+    expect(flattened.at(-1)).toMatchObject({
+      depth: 3000,
+      comment: { _id: "comment-3000" }
+    });
   });
 });

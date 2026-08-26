@@ -17,9 +17,18 @@ quickly as possible and credited when appropriate.
 ## Security Boundaries
 
 - Production authentication uses signed server sessions and HTTP-only cookies.
+- Password hashes are excluded by default at the Mongoose schema boundary and
+  selected explicitly only during password verification.
 - The `x-test-user-id` header is accepted only when `NODE_ENV=test`.
 - User-authored Markdown is sanitized before rendering.
 - Post and comment voter lists are private and must pass through the shared
   serializer before entering an API response.
+- Vercel proxies REST requests through same-origin `/api`; unsafe API requests
+  also require a trusted `Origin`, and `express-rate-limit` protects every API
+  route with a separate stricter budget for authentication attempts.
+- Production replica sets use transactions for multi-document votes,
+  ownership references, moderation, membership changes, and cascade deletion.
+- Administrator privileges are granted only through the guarded
+  `admin:promote` script; application startup only verifies `ADMIN_EMAIL`.
 - Production startup requires `SESSION_SECRET`; secrets belong in hosting
   environment variables and must never be committed.

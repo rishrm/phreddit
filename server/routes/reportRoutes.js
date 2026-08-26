@@ -2,8 +2,10 @@ import express from "express";
 import Post from "../models/Post.js";
 import Report from "../models/Report.js";
 import { requireAdmin, requireLogin } from "../middleware/auth.js";
-import { deletePostAndComments } from "../utils/cascadeDelete.js";
+import { deletePostsInSession } from "../utils/cascadeDelete.js";
 import { requireNonEmptyString } from "../utils/validation.js";
+import { emitPostUpdated } from "../realtime.js";
+import { runAtomic, sessionOptions, withSession } from "../utils/transactions.js";
 
 const router = express.Router();
 const VALID_REASONS = new Set(["spam", "harassment", "off-topic", "other"]);
@@ -68,12 +70,14 @@ function populateReport(query) {
 
 router.post("/posts/:postId", requireLogin, async (req, res, next) => {
   try {
-    const post = await Post.findById(req.params.postId);
+    const post = await Post.findById(req.params.postId)
+      .populate("postedBy", "displayName")
+      .populate("community", "name");
     if (!post) {
       return res.status(404).json({ error: "Post not found." });
     }
 
-    if (String(post.postedBy) === String(req.currentUser._id)) {
+    if (String(post.postedBy?._id || post.postedBy) === String(req.currentUser._id)) {
       return res.status(400).json({ error: "You cannot report your own post." });
     }
 
@@ -93,11 +97,18 @@ router.post("/posts/:postId", requireLogin, async (req, res, next) => {
       targetPost: post._id,
       reportedBy: req.currentUser._id,
       reason,
-      details
+      details,
+      contentSnapshot: {
+        title: post.title,
+        content: post.content,
+        communityName: post.community?.name || "",
+        authorDisplayName: post.postedBy?.displayName || "",
+        postedAt: post.createdAt
+      }
     });
 
     return res.status(201).json({
-      message: "Report submitted for moderator review.",
+      message: "Report submitted for administrator review.",
       report
     });
   } catch (error) {
@@ -108,7 +119,12 @@ router.post("/posts/:postId", requireLogin, async (req, res, next) => {
 router.get("/", requireLogin, requireAdmin, async (req, res, next) => {
   try {
     const status = normalizeReportStatus(req.query.status);
-    const query = status ? Report.find({ status }) : Report.find();
+    const filter = status === "pending"
+      ? { status: { $in: ["pending", "processing"] } }
+      : status
+        ? { status }
+        : {};
+    const query = Report.find(filter);
 
     const reports = await populateReport(
       query.sort({ createdAt: -1 }).limit(50)
@@ -127,36 +143,90 @@ router.post("/:id/resolve", requireLogin, requireAdmin, async (req, res, next) =
       return res.status(400).json({ error: "Resolution action must be dismiss or delete_post." });
     }
 
-    const report = await Report.findById(req.params.id);
-    if (!report) {
-      return res.status(404).json({ error: "Report not found." });
-    }
-
-    if (report.status !== "pending") {
-      return res.status(409).json({ error: "This report has already been resolved." });
-    }
-
     const resolutionNote = normalizeOptionalNote(req.body.note, "Resolution note");
+    const resolvedAt = new Date();
+    let result;
+    try {
+      result = await runAtomic(async (session) => {
+        const report = await Report.findOneAndUpdate(
+          { _id: req.params.id, status: "pending" },
+          {
+            $set: {
+              status: "processing",
+              resolvedBy: req.currentUser._id,
+              resolvedAt,
+              resolutionNote
+            }
+          },
+          { new: true, ...sessionOptions(session) }
+        );
+        if (!report) return null;
 
-    if (action === "delete_post") {
-      await deletePostAndComments(report.targetPost, { deleteReports: false });
-      await Report.updateMany(
-        { targetPost: report.targetPost, status: "pending" },
-        {
-          $set: {
-            status: "content_removed",
-            resolvedBy: req.currentUser._id,
-            resolvedAt: new Date(),
-            resolutionNote
+        let touchedPostIds = [];
+        if (action === "delete_post") {
+          const deletion = await deletePostsInSession(
+            [report.targetPost],
+            { deleteReports: false, session }
+          );
+          touchedPostIds = deletion.touchedPostIds;
+          await Report.updateMany(
+            {
+              targetPost: report.targetPost,
+              status: { $in: ["pending", "processing"] }
+            },
+            {
+              $set: {
+                status: "content_removed",
+                resolvedBy: req.currentUser._id,
+                resolvedAt,
+                resolutionNote
+              }
+            },
+            sessionOptions(session)
+          );
+        } else {
+          const update = await Report.updateOne(
+            { _id: report._id, status: "processing" },
+            { $set: { status: "dismissed" } },
+            sessionOptions(session)
+          );
+          if (update.matchedCount !== 1) {
+            throw new Error("Report resolution claim was lost.");
           }
         }
-      );
-    } else {
-      report.status = "dismissed";
-      report.resolvedBy = req.currentUser._id;
-      report.resolvedAt = new Date();
-      report.resolutionNote = resolutionNote;
-      await report.save();
+
+        return { touchedPostIds };
+      });
+    } catch (error) {
+      await Report.updateOne(
+        {
+          _id: req.params.id,
+          status: "processing",
+          resolvedBy: req.currentUser._id
+        },
+        {
+          $set: { status: "pending" },
+          $unset: {
+            resolvedBy: "",
+            resolvedAt: "",
+            resolutionNote: ""
+          }
+        }
+      ).catch(() => {});
+      throw error;
+    }
+
+    if (!result) {
+      const exists = await withSession(Report.exists({ _id: req.params.id }), null);
+      return res.status(exists ? 409 : 404).json({
+        error: exists
+          ? "This report has already been resolved or is being processed."
+          : "Report not found."
+      });
+    }
+
+    for (const postId of result.touchedPostIds) {
+      emitPostUpdated(postId);
     }
 
     const reports = await populateReport(

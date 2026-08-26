@@ -12,21 +12,34 @@ import { applyVote } from "../utils/voteService.js";
 import { attachPostStats } from "../utils/postStats.js";
 import { presentVotable } from "../utils/serialize.js";
 import {
+  POST_CONTENT_MAX_LENGTH,
   requireLength,
   requireNonEmptyString,
   requireValidUserContent
 } from "../utils/validation.js";
 import { emitPostUpdated } from "../realtime.js";
+import { runAtomic, sessionOptions, withSession } from "../utils/transactions.js";
 
 const router = express.Router();
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;
+const MAX_PAGE = 10000;
+const MAX_SEARCH_LENGTH = 200;
+const MAX_SEARCH_MATCHES = 5000;
+const MAX_COMMENTS_PER_POST = 5000;
 const SORTS = new Set(["newest", "oldest", "active"]);
 
+function positiveInteger(value, fallback) {
+  const normalized = String(value ?? "");
+  if (!/^\d+$/.test(normalized)) return fallback;
+  const parsed = Number(normalized);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function parsePagination(query) {
-  const page = Math.max(1, Number.parseInt(query.page, 10) || 1);
-  const requestedLimit = Number.parseInt(query.limit, 10) || DEFAULT_PAGE_SIZE;
+  const page = Math.min(positiveInteger(query.page, 1), MAX_PAGE);
+  const requestedLimit = positiveInteger(query.limit, DEFAULT_PAGE_SIZE);
   const limit = Math.min(Math.max(1, requestedLimit), MAX_PAGE_SIZE);
   return { page, limit, skip: (page - 1) * limit };
 }
@@ -47,6 +60,7 @@ function toObjectId(value, fieldName) {
 // first and folded into the filter).
 async function buildListFilter(query) {
   const filter = {};
+  let searchTruncated = false;
 
   if (query.community) {
     filter.community = toObjectId(query.community, "community");
@@ -58,21 +72,36 @@ async function buildListFilter(query) {
 
   const search = String(query.search || "").trim();
   if (search) {
-    const [postMatches, commentMatches] = await Promise.all([
-      Post.find({ $text: { $search: search } }).select("_id"),
-      Comment.find({ $text: { $search: search } }).select("post")
-    ]);
+    if (search.length > MAX_SEARCH_LENGTH) {
+      const error = new Error(`Search must be ${MAX_SEARCH_LENGTH} characters or less.`);
+      error.status = 400;
+      throw error;
+    }
 
-    const uniqueIds = new Set([
-      ...postMatches.map((doc) => String(doc._id)),
-      ...commentMatches.map((doc) => String(doc.post))
+    const matches = await Post.aggregate([
+      { $match: { $text: { $search: search } } },
+      { $project: { postId: "$_id", _id: 0 } },
+      {
+        $unionWith: {
+          coll: Comment.collection.name,
+          pipeline: [
+            { $match: { $text: { $search: search } } },
+            { $project: { postId: "$post", _id: 0 } }
+          ]
+        }
+      },
+      { $group: { _id: "$postId" } },
+      { $limit: MAX_SEARCH_MATCHES + 1 }
     ]);
+    searchTruncated = matches.length > MAX_SEARCH_MATCHES;
     filter._id = {
-      $in: [...uniqueIds].map((id) => new mongoose.Types.ObjectId(id))
+      $in: matches
+        .slice(0, MAX_SEARCH_MATCHES)
+        .map((match) => match._id)
     };
   }
 
-  return filter;
+  return { filter, searchTruncated };
 }
 
 function hydratePostsQuery(query) {
@@ -118,10 +147,10 @@ async function listStandardPosts(filter, skip, limit, direction, joinedIds) {
   return hydrateOrderedPosts(ordered);
 }
 
-async function normalizeLinkFlair(value) {
+async function normalizeLinkFlair(value, session = null) {
   if (value === undefined || value === null || value === "") return null;
   const flairId = toObjectId(value, "link flair");
-  if (!(await LinkFlair.exists({ _id: flairId }))) {
+  if (!(await withSession(LinkFlair.exists({ _id: flairId }), session))) {
     const error = new Error("Link flair not found.");
     error.status = 400;
     throw error;
@@ -199,7 +228,7 @@ router.get("/", async (req, res, next) => {
   try {
     const sort = SORTS.has(req.query.sort) ? req.query.sort : "newest";
     const { page, limit, skip } = parsePagination(req.query);
-    const filter = await buildListFilter(req.query);
+    const { filter, searchTruncated } = await buildListFilter(req.query);
     const currentUserId = req.currentUser?._id || null;
     const joinedIds = joinedCommunityIds(req.currentUser);
 
@@ -225,8 +254,21 @@ router.get("/", async (req, res, next) => {
       limit,
       total,
       hasMore: skip + posts.length < total,
-      sort
+      sort,
+      searchTruncated
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/:id/summary", async (req, res, next) => {
+  try {
+    const post = await Post.findById(req.params.id).select("title").lean();
+    if (!post) {
+      return res.status(404).json({ error: "Post not found." });
+    }
+    return res.json({ post });
   } catch (error) {
     next(error);
   }
@@ -248,12 +290,14 @@ router.get("/:id", async (req, res, next) => {
     const currentUserId = req.currentUser?._id || null;
 
     // Comments are fetched flat in one indexed query and assembled into a
-    // tree in memory, so thread depth is unbounded (the previous nested
-    // populate silently truncated replies beyond a fixed depth).
+    // tree in memory, so nesting depth is not recursively truncated. The
+    // response cap bounds memory for pathological threads.
     const comments = await Comment.find({ post: post._id })
       .populate("commentedBy", "displayName reputation")
-      .sort({ createdAt: -1 })
+      .sort({ createdAt: 1, _id: 1 })
+      .limit(MAX_COMMENTS_PER_POST)
       .lean();
+    const commentCount = await Comment.countDocuments({ post: post._id });
 
     const byId = new Map();
     for (const comment of comments) {
@@ -283,8 +327,9 @@ router.get("/:id", async (req, res, next) => {
     const presentedPost = {
       ...presentVotable(post, currentUserId),
       comments: rootComments,
-      commentCount: comments.length,
-      latestCommentAt
+      commentCount,
+      latestCommentAt,
+      commentsTruncated: commentCount > comments.length
     };
 
     return res.json({ post: presentedPost });
@@ -304,6 +349,7 @@ router.post("/:id/view", async (req, res, next) => {
     if (!post) {
       return res.status(404).json({ error: "Post not found." });
     }
+    emitPostUpdated(post._id);
     return res.json({ views: post.views });
   } catch (error) {
     next(error);
@@ -313,41 +359,76 @@ router.post("/:id/view", async (req, res, next) => {
 router.post("/", requireLogin, async (req, res, next) => {
   try {
     const title = requireLength(req.body.title, "Post title", 100);
-    const content = requireValidUserContent(req.body.content, "Post content");
-    const communityId = requireNonEmptyString(req.body.community, "Community");
-    const linkFlair = await normalizeLinkFlair(req.body.linkFlair);
+    const content = requireValidUserContent(
+      req.body.content,
+      "Post content",
+      POST_CONTENT_MAX_LENGTH
+    );
+    const communityId = toObjectId(
+      requireNonEmptyString(req.body.community, "Community"),
+      "community"
+    );
+    const newFlair = Object.hasOwn(req.body, "newFlair")
+      ? requireLength(req.body.newFlair, "New link flair", 30)
+      : null;
 
-    const community = await Community.findById(communityId);
-    if (!community) {
-      return res.status(404).json({
-        error: "Community not found."
-      });
+    const post = await runAtomic(async (session) => {
+      const community = await withSession(
+        Community.findById(communityId).select("_id"),
+        session
+      );
+      if (!community) return null;
+
+      let linkFlair = await normalizeLinkFlair(req.body.linkFlair, session);
+      if (newFlair) {
+        const flair = await LinkFlair.findOneAndUpdate(
+          { content: newFlair },
+          { $setOnInsert: { content: newFlair } },
+          {
+            upsert: true,
+            new: true,
+            setDefaultsOnInsert: true,
+            ...sessionOptions(session)
+          }
+        );
+        linkFlair = flair._id;
+      }
+
+      const [createdPost] = await Post.create(
+        [{
+          title,
+          content,
+          community: community._id,
+          postedBy: req.currentUser._id,
+          linkFlair,
+          views: 0,
+          comments: [],
+          upvotes: 0,
+          downvotes: 0,
+          votedBy: []
+        }],
+        sessionOptions(session)
+      );
+
+      const communityUpdate = await Community.updateOne(
+        { _id: community._id },
+        { $addToSet: { posts: createdPost._id } },
+        sessionOptions(session)
+      );
+      const userUpdate = await User.updateOne(
+        { _id: req.currentUser._id },
+        { $addToSet: { createdPosts: createdPost._id } },
+        sessionOptions(session)
+      );
+      if (communityUpdate.matchedCount !== 1 || userUpdate.matchedCount !== 1) {
+        throw new Error("Post references could not be updated.");
+      }
+      return createdPost;
+    });
+
+    if (!post) {
+      return res.status(404).json({ error: "Community not found." });
     }
-
-    const post = await Post.create({
-      title,
-      content,
-      community: community._id,
-      postedBy: req.currentUser._id,
-      linkFlair,
-      views: 0,
-      comments: [],
-      upvotes: 0,
-      downvotes: 0,
-      votedBy: []
-    });
-
-    await Community.findByIdAndUpdate(community._id, {
-      $addToSet: {
-        posts: post._id
-      }
-    });
-
-    await User.findByIdAndUpdate(req.currentUser._id, {
-      $addToSet: {
-        createdPosts: post._id
-      }
-    });
 
     return res.status(201).json({
       message: "Post created successfully.",
@@ -377,7 +458,11 @@ router.put("/:id", requireLogin, async (req, res, next) => {
       post.title = requireLength(req.body.title, "Post title", 100);
     }
     if (Object.hasOwn(req.body, "content")) {
-      post.content = requireValidUserContent(req.body.content, "Post content");
+      post.content = requireValidUserContent(
+        req.body.content,
+        "Post content",
+        POST_CONTENT_MAX_LENGTH
+      );
     }
     if (Object.hasOwn(req.body, "linkFlair")) {
       post.linkFlair = await normalizeLinkFlair(req.body.linkFlair);
@@ -449,34 +534,48 @@ router.post("/:id/vote", requireLogin, async (req, res, next) => {
       });
     }
 
-    const result = await applyVote(Post, post._id, req.currentUser._id, voteType);
-    if (!result) {
+    const voteResult = await runAtomic(async (session) => {
+      const currentPost = await withSession(Post.findById(post._id), session);
+      if (!currentPost) return null;
+      const result = await applyVote(
+        Post,
+        currentPost._id,
+        req.currentUser._id,
+        voteType,
+        { session }
+      );
+      if (!result) return { conflict: true };
+
+      let posterReputation = null;
+      if (result.repDelta !== 0) {
+        const updatedPoster = await User.findByIdAndUpdate(
+          currentPost.postedBy,
+          { $inc: { reputation: result.repDelta } },
+          { new: true, ...sessionOptions(session) }
+        );
+        if (!updatedPoster) throw new Error("Post author no longer exists.");
+        posterReputation = updatedPoster.reputation;
+      }
+      return { ...result, posterReputation };
+    });
+
+    if (!voteResult || voteResult.conflict) {
       return res.status(409).json({
         error: "Vote could not be applied. Please try again."
       });
-    }
-
-    let posterReputation = null;
-    if (result.repDelta !== 0) {
-      const updatedPoster = await User.findByIdAndUpdate(
-        post.postedBy,
-        { $inc: { reputation: result.repDelta } },
-        { new: true }
-      );
-      posterReputation = updatedPoster?.reputation ?? null;
     }
 
     emitPostUpdated(post._id);
 
     return res.json({
       message:
-        result.action === "removed"
+        voteResult.action === "removed"
           ? "Vote removed."
-          : result.action === "switched"
+          : voteResult.action === "switched"
             ? "Vote changed."
             : "Vote recorded successfully.",
-      post: presentVotable(result.doc, req.currentUser._id),
-      posterReputation
+      post: presentVotable(voteResult.doc, req.currentUser._id),
+      posterReputation: voteResult.posterReputation
     });
   } catch (error) {
     next(error);

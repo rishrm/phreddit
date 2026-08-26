@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { api } from "../api/client.js";
 import SortButtons from "../components/SortButtons.jsx";
@@ -19,32 +19,47 @@ export default function Community() {
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [communityLoading, setCommunityLoading] = useState(true);
   const [communityError, setCommunityError] = useState("");
+  const [postsError, setPostsError] = useState("");
   const [currentSort, setCurrentSort] = useState("newest");
+  const [membershipPending, setMembershipPending] = useState(false);
+  const postsRequestRef = useRef(0);
 
   useEffect(() => {
     if (!communityId) return;
+    const controller = new AbortController();
+    setCommunity(null);
+    setCommunityLoading(true);
     setCommunityError("");
     api
-      .getCommunity(communityId)
+      .getCommunity(communityId, { signal: controller.signal })
       .then((data) => setCommunity(data.community))
       .catch((error) => {
+        if (error.name === "AbortError") return;
         setCommunityError(error.message);
         showMessage(error.message, "error");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setCommunityLoading(false);
       });
-  }, [communityId, showMessage, refreshToken]);
+    return () => controller.abort();
+  }, [communityId, showMessage]);
 
   const loadPosts = useCallback(
-    async (targetPage, append) => {
+    async (targetPage, append, signal) => {
       if (!communityId) return;
+      const requestId = ++postsRequestRef.current;
       try {
         setLoading(true);
+        setPostsError("");
         const data = await api.getPosts({
           community: communityId,
           sort: currentSort,
           page: targetPage,
           limit: PAGE_SIZE
-        });
+        }, { signal });
+        if (requestId !== postsRequestRef.current) return;
         setPosts((previous) =>
           append ? [...previous, ...(data.posts || [])] : data.posts || []
         );
@@ -52,38 +67,46 @@ export default function Community() {
         setTotal(data.total ?? 0);
         setHasMore(Boolean(data.hasMore));
       } catch (error) {
+        if (error.name === "AbortError" || requestId !== postsRequestRef.current) return;
+        setPostsError(error.message);
         showMessage(error.message, "error");
       } finally {
-        setLoading(false);
+        if (requestId === postsRequestRef.current) setLoading(false);
       }
     },
     [communityId, currentSort, showMessage]
   );
 
   useEffect(() => {
-    loadPosts(1, false);
+    const controller = new AbortController();
+    void loadPosts(1, false, controller.signal);
+    return () => controller.abort();
   }, [loadPosts, refreshToken]);
 
-  const isJoined = useMemo(() => {
-    if (!user || !community) return false;
-    return (community.members || []).some(
-      (member) => String(member._id || member) === String(user._id)
-    );
-  }, [community, user]);
+  const isJoined = Boolean(user && community?.isJoined);
 
   async function toggleMembership() {
-    if (!community) return;
+    if (!community || membershipPending) return;
+    const joining = !isJoined;
     try {
-      if (isJoined) {
+      setMembershipPending(true);
+      if (!joining) {
         await api.leaveCommunity(community._id);
         showMessage("Left community successfully.", "success");
       } else {
         await api.joinCommunity(community._id);
         showMessage("Joined community successfully.", "success");
       }
-      refreshCurrentUser();
+      setCommunity((current) => current ? {
+        ...current,
+        isJoined: joining,
+        memberCount: Math.max(0, (current.memberCount ?? 0) + (joining ? 1 : -1))
+      } : current);
+      await refreshCurrentUser();
     } catch (error) {
       showMessage(error.message, "error");
+    } finally {
+      setMembershipPending(false);
     }
   }
 
@@ -96,8 +119,10 @@ export default function Community() {
             <p>{communityError}</p>
             <button type="button" onClick={() => navigate("/home")}>Back Home</button>
           </div>
-        ) : (
+        ) : communityLoading ? (
           <p>Loading community...</p>
+        ) : (
+          <p>This community is unavailable.</p>
         )}
       </main>
     );
@@ -117,13 +142,25 @@ export default function Community() {
       <p className="meta-row">
         <span>Creator: {displayNameOfUser(community.creator)}</span>
         <span>Created: {formatDate(community.createdAt)}</span>
-        <span>Members: {community.members?.length ?? community.memberCount ?? 0}</span>
+        <span>Members: {community.memberCount ?? 0}</span>
       </p>
       {user && (
-        <button onClick={toggleMembership}>{isJoined ? "Leave Community" : "Join Community"}</button>
+        <button type="button" disabled={membershipPending} onClick={toggleMembership}>
+          {membershipPending
+            ? "Updating..."
+            : isJoined
+              ? "Leave Community"
+              : "Join Community"}
+        </button>
       )}
       <button onClick={() => navigate("/home")}>Back Home</button>
       <p className="post-count">Showing {posts.length} of {total} posts</p>
+      {postsError && (
+        <p className="error-state" role="alert">
+          {postsError}{" "}
+          <button type="button" onClick={() => loadPosts(1, false)}>Retry</button>
+        </p>
+      )}
       <div className="list-column">
         {loading && posts.length === 0 ? (
           <p className="muted">Loading posts...</p>

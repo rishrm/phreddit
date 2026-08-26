@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client.js";
 import { displayNameOfUser, formatDate, userIdOf } from "../utils/format.jsx";
@@ -13,8 +14,11 @@ export default function CommentItem({ comment, user, postId, depth = 0, showMess
       ? "You cannot vote on your own comment."
       : undefined;
   const authorId = userIdOf(comment.commentedBy);
+  const voteHintId = useId();
+  const voteCountId = useId();
 
   async function vote(voteType) {
+    if (!canVote || isOwnComment) return;
     try {
       const data = await api.voteComment(comment._id, voteType);
       showMessage(data.message, "success");
@@ -24,10 +28,8 @@ export default function CommentItem({ comment, user, postId, depth = 0, showMess
     }
   }
 
-  const replies = Array.isArray(comment.replies) ? comment.replies : [];
-
   return (
-    <div className="comment-card" style={{ marginLeft: Math.min(depth, 6) * 24 }}>
+    <article className={`comment-card comment-depth-${Math.min(depth, 6)}`}>
       <div className="meta-row">
         {authorId ? (
           <Link className="inline-link" to={`/users/${authorId}`}>
@@ -45,9 +47,9 @@ export default function CommentItem({ comment, user, postId, depth = 0, showMess
             type="button"
             aria-label="Upvote"
             aria-pressed={comment.userVote === "upvote"}
+            aria-disabled={!canVote || isOwnComment}
+            aria-describedby={`${voteCountId}${voteHint ? ` ${voteHintId}` : ""}`}
             className={comment.userVote === "upvote" ? "vote-btn active" : "vote-btn"}
-            disabled={!canVote || isOwnComment}
-            title={voteHint}
             onClick={() => vote("upvote")}
           >
             ▲ {comment.upvotes ?? 0}
@@ -56,9 +58,9 @@ export default function CommentItem({ comment, user, postId, depth = 0, showMess
             type="button"
             aria-label="Downvote"
             aria-pressed={comment.userVote === "downvote"}
+            aria-disabled={!canVote || isOwnComment}
+            aria-describedby={`${voteCountId}${voteHint ? ` ${voteHintId}` : ""}`}
             className={comment.userVote === "downvote" ? "vote-btn active" : "vote-btn"}
-            disabled={!canVote || isOwnComment}
-            title={voteHint}
             onClick={() => vote("downvote")}
           >
             ▼ {comment.downvotes ?? 0}
@@ -71,23 +73,16 @@ export default function CommentItem({ comment, user, postId, depth = 0, showMess
           </Link>
         </div>
       )}
+      <span id={voteCountId} className="sr-only">
+        {comment.upvotes ?? 0} upvotes and {comment.downvotes ?? 0} downvotes.
+      </span>
+      {voteHint && <span id={voteHintId} className="sr-only">{voteHint}</span>}
       {!user && (
         <div className="meta-row">
           <span>Up: {comment.upvotes ?? 0}</span>
           <span>Down: {comment.downvotes ?? 0}</span>
         </div>
       )}
-      {replies.map((reply) => (
-        <CommentItem
-          key={reply._id}
-          comment={reply}
-          user={user}
-          postId={postId}
-          depth={depth + 1}
-          showMessage={showMessage}
-          onReload={onReload}
-        />
-      ))}
-    </div>
+    </article>
   );
 }

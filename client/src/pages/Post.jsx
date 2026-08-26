@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { api } from "../api/client.js";
 import { subscribeToPost } from "../realtime.js";
@@ -6,7 +6,7 @@ import CommentItem from "../components/CommentItem.jsx";
 import RichText from "../components/RichText.jsx";
 import SavePostButton from "../components/SavePostButton.jsx";
 import { displayNameOfUser, flairContentOf, formatDate, userIdOf } from "../utils/format.jsx";
-import { commentCountOf, sortComments } from "../utils/posts.js";
+import { commentCountOf, flattenComments, sortComments } from "../utils/posts.js";
 
 export default function Post() {
   const { user, showMessage, refreshCurrentUser } = useOutletContext();
@@ -22,43 +22,67 @@ export default function Post() {
     reason: "spam",
     details: ""
   });
+  const [votePending, setVotePending] = useState(false);
+  const [reportPending, setReportPending] = useState(false);
+  const loadRequestRef = useRef(0);
+  const voteHintId = useId();
+  const voteCountId = useId();
 
-  const loadPost = useCallback(async () => {
+  const loadPost = useCallback(async ({ signal, announceError = true } = {}) => {
     if (!postId) return;
+    const requestId = ++loadRequestRef.current;
     try {
       setLoadError("");
-      const data = await api.getPost(postId);
+      const data = await api.getPost(postId, { signal });
+      if (requestId !== loadRequestRef.current) return;
       setPost(data.post);
     } catch (error) {
+      if (error.name === "AbortError" || requestId !== loadRequestRef.current) return;
       setPost(null);
       setLoadError(error.message);
-      showMessage(error.message, "error");
+      if (announceError) showMessage(error.message, "error");
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestRef.current) setLoading(false);
     }
   }, [postId, showMessage]);
 
   // Initial load + one explicit view count per visit.
   useEffect(() => {
-    loadPost();
+    const controller = new AbortController();
+    setPost(null);
+    setLoadError("");
+    setLoading(true);
+    void loadPost({ signal: controller.signal });
+    return () => controller.abort();
   }, [loadPost]);
 
   useEffect(() => {
     if (!postId) return;
-    api.viewPost(postId).catch(() => {});
+    const controller = new AbortController();
+    api.viewPost(postId, { signal: controller.signal })
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        setPost((current) => current ? { ...current, views: data.views } : current);
+      })
+      .catch(() => {});
+    return () => controller.abort();
   }, [postId]);
 
   // Live updates: refetch whenever anyone comments, votes, or edits.
   useEffect(() => {
     if (!postId) return undefined;
     return subscribeToPost(postId, () => {
-      loadPost();
+      void loadPost({ announceError: false });
     });
   }, [postId, loadPost]);
 
   const sortedComments = useMemo(
     () => sortComments(post?.comments || [], commentSort),
     [post, commentSort]
+  );
+  const flattenedComments = useMemo(
+    () => flattenComments(sortedComments),
+    [sortedComments]
   );
 
   const isOwnPost =
@@ -73,7 +97,9 @@ export default function Post() {
         : undefined;
 
   async function votePost(voteType) {
+    if (!canVote || votePending) return;
     try {
+      setVotePending(true);
       const data = await api.votePost(postId, voteType);
       setPost((previous) =>
         previous
@@ -89,18 +115,23 @@ export default function Post() {
       refreshCurrentUser();
     } catch (error) {
       showMessage(error.message, "error");
+    } finally {
+      setVotePending(false);
     }
   }
 
   async function submitReport(event) {
     event.preventDefault();
     try {
+      setReportPending(true);
       const data = await api.reportPost(postId, reportForm);
       showMessage(data.message, "success");
       setShowReportForm(false);
       setReportForm({ reason: "spam", details: "" });
     } catch (error) {
       showMessage(error.message, "error");
+    } finally {
+      setReportPending(false);
     }
   }
 
@@ -130,7 +161,7 @@ export default function Post() {
   return (
     <main className="card" aria-label="Post Page">
       <h1>{post.title}</h1>
-      <RichText text={post.content} />
+      <RichText text={post.content} allowImages />
       <p className="meta-row">
         <span>
           Community:{" "}
@@ -157,20 +188,22 @@ export default function Post() {
         <div className="action-row">
           <button
             type="button"
+            aria-label="Upvote"
             aria-pressed={post.userVote === "upvote"}
+            aria-disabled={!canVote || votePending}
+            aria-describedby={`${voteCountId}${voteHint ? ` ${voteHintId}` : ""}`}
             className={post.userVote === "upvote" ? "vote-btn active" : "vote-btn"}
-            disabled={!canVote}
-            title={voteHint}
             onClick={() => votePost("upvote")}
           >
             Upvote · {post.upvotes ?? 0}
           </button>
           <button
             type="button"
+            aria-label="Downvote"
             aria-pressed={post.userVote === "downvote"}
+            aria-disabled={!canVote || votePending}
+            aria-describedby={`${voteCountId}${voteHint ? ` ${voteHintId}` : ""}`}
             className={post.userVote === "downvote" ? "vote-btn active" : "vote-btn"}
-            disabled={!canVote}
-            title={voteHint}
             onClick={() => votePost("downvote")}
           >
             Downvote · {post.downvotes ?? 0}
@@ -186,6 +219,10 @@ export default function Post() {
               {showReportForm ? "Cancel report" : "Report post"}
             </button>
           )}
+          <span id={voteCountId} className="sr-only">
+            {post.upvotes ?? 0} upvotes and {post.downvotes ?? 0} downvotes.
+          </span>
+          {voteHint && <span id={voteHintId} className="sr-only">{voteHint}</span>}
         </div>
       ) : (
         <p className="muted">
@@ -209,12 +246,14 @@ export default function Post() {
           <textarea
             id="reportDetails"
             maxLength={400}
-            placeholder="Optional context for moderators"
+            placeholder="Optional context for administrators"
             value={reportForm.details}
             onChange={(event) => setReportForm({ ...reportForm, details: event.target.value })}
           />
           <div className="action-row">
-            <button type="submit">Submit report</button>
+            <button type="submit" disabled={reportPending}>
+              {reportPending ? "Submitting..." : "Submit report"}
+            </button>
             <button type="button" onClick={() => setShowReportForm(false)}>Cancel</button>
           </div>
         </form>
@@ -242,21 +281,26 @@ export default function Post() {
         </div>
       </div>
       {user && (
-        <button type="button" onClick={() => navigate(`/posts/${postId}/comments/new`)}>
+        <button className="primary" type="button" onClick={() => navigate(`/posts/${postId}/comments/new`)}>
           Add a comment
         </button>
       )}
+      {post.commentsTruncated && (
+        <p className="muted" role="status">
+          Showing the first 5,000 comments in this unusually large thread.
+        </p>
+      )}
       <div className="list-column">
-        {sortedComments.length === 0 ? (
+        {flattenedComments.length === 0 ? (
           <p>No comments yet.</p>
         ) : (
-          sortedComments.map((comment) => (
+          flattenedComments.map(({ comment, depth }) => (
             <CommentItem
               key={comment._id}
               comment={comment}
               user={user}
               postId={postId}
-              depth={0}
+              depth={depth}
               showMessage={showMessage}
               onReload={loadPost}
             />

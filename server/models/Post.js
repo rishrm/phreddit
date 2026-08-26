@@ -27,7 +27,8 @@ const postSchema = new mongoose.Schema(
     content: {
       type: String,
       required: true,
-      trim: true
+      trim: true,
+      maxlength: 20000
     },
     linkFlair: {
       type: mongoose.Schema.Types.ObjectId,
@@ -70,5 +71,8 @@ const postSchema = new mongoose.Schema(
 postSchema.index({ title: "text", content: "text" });
 postSchema.index({ community: 1, createdAt: -1 });
 postSchema.index({ createdAt: -1, _id: -1 });
+postSchema.index({ linkFlair: 1, createdAt: -1 });
+postSchema.index({ postedBy: 1, createdAt: -1 });
+postSchema.index({ "votedBy.user": 1 });
 
 export default mongoose.model("Post", postSchema);

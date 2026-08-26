@@ -2,6 +2,10 @@ import mongoose from "mongoose";
 
 export const PASSWORD_MIN_LENGTH = 8;
 export const PASSWORD_MAX_LENGTH = 128;
+export const FIRST_NAME_MAX_LENGTH = 50;
+export const LAST_NAME_MAX_LENGTH = 50;
+export const DISPLAY_NAME_MAX_LENGTH = 50;
+export const POST_CONTENT_MAX_LENGTH = 20000;
 
 function validationError(message) {
   const error = new Error(message);
@@ -69,26 +73,32 @@ export function passwordContainsForbiddenValue(password, userFields) {
 export function validateRegistrationInput(input) {
   const errors = [];
 
-  if (!input?.firstName?.trim()) {
+  if (typeof input?.firstName !== "string" || !input.firstName.trim()) {
     errors.push("First name is required.");
+  } else if (input.firstName.trim().length > FIRST_NAME_MAX_LENGTH) {
+    errors.push(`First name must be ${FIRST_NAME_MAX_LENGTH} characters or less.`);
   }
-  if (!input?.lastName?.trim()) {
+  if (typeof input?.lastName !== "string" || !input.lastName.trim()) {
     errors.push("Last name is required.");
+  } else if (input.lastName.trim().length > LAST_NAME_MAX_LENGTH) {
+    errors.push(`Last name must be ${LAST_NAME_MAX_LENGTH} characters or less.`);
   }
-  if (!input?.displayName?.trim()) {
+  if (typeof input?.displayName !== "string" || !input.displayName.trim()) {
     errors.push("Display name is required.");
+  } else if (input.displayName.trim().length > DISPLAY_NAME_MAX_LENGTH) {
+    errors.push(`Display name must be ${DISPLAY_NAME_MAX_LENGTH} characters or less.`);
   }
   if (!validateEmail(input?.email)) {
     errors.push("A valid email address is required.");
   }
-  if (!input?.password) {
+  if (typeof input?.password !== "string" || !input.password) {
     errors.push("Password is required.");
   } else if (input.password.length < PASSWORD_MIN_LENGTH) {
     errors.push(`Password must be at least ${PASSWORD_MIN_LENGTH} characters.`);
   } else if (input.password.length > PASSWORD_MAX_LENGTH) {
     errors.push(`Password must be ${PASSWORD_MAX_LENGTH} characters or less.`);
   }
-  if (input?.password !== input?.confirmPassword) {
+  if (typeof input?.confirmPassword !== "string" || input.password !== input.confirmPassword) {
     errors.push("Passwords must match.");
   }
 
