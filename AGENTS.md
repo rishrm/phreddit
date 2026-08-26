@@ -57,8 +57,9 @@ also `npm run test:e2e`, and update the specs in `client/e2e/` if flows moved.
 - `User.passwordHash` is `select: false`. Only authentication may explicitly
   request it with `.select("+passwordHash")`; never return it from an API.
 - Keep the global API limiter and production trusted-origin guard mounted
-  before `/api` routes. Cross-site session cookies require both controls;
-  unsafe production requests without an allowed `Origin` must stay blocked.
+  before request parsing, and `csrfProtection` mounted after session
+  middleware. Unsafe production requests require both a trusted `Origin` and
+  the session-bound token from `ensureCsrfToken`; never weaken either boundary.
 - Mongo gotchas already handled in `server/routes/postRoutes.js` — keep them:
   `$text` cannot live inside `$or` (resolve matching ids first), and
   aggregation pipelines do NOT auto-cast string ids (use `toObjectId()`).
@@ -82,6 +83,8 @@ also `npm run test:e2e`, and update the specs in `client/e2e/` if flows moved.
   disabled on own content and below 50 reputation.
 - Vercel production REST calls stay on same-origin `/api` via `vercel.json`;
   Socket.IO uses `VITE_SOCKET_URL` because it connects directly to Render.
+- Unsafe API calls go through `src/api/client.js`, which obtains, attaches, and
+  refreshes the session CSRF token. Do not bypass that wrapper.
 
 ## Test-writing notes
 
@@ -95,6 +98,8 @@ also `npm run test:e2e`, and update the specs in `client/e2e/` if flows moved.
   creating a post returns Home while a new community opens its page; post titles are
   LINKS not buttons, and authors cannot vote on their own posts — use a second
   user to test voting.
+- Playwright starts the API with `ENABLE_CSRF=true`; its reset helper must first
+  obtain a token from `/api/auth/csrf` and preserve the test session cookie.
 - Every e2e test resets only a database whose name begins with
   `phreddit_e2e`; never loosen the reset route or teardown name check.
 

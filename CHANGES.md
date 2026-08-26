@@ -8,6 +8,8 @@
 - `votedBy` lists are not exposed by any API surface, including profile content; responses include only the caller's own `userVote`.
 - Password hashes are excluded by default by the Mongoose schema and selected explicitly only during login.
 - Production administrator promotion moved to a guarded explicit script; startup only verifies the configured administrator.
+- Unsafe requests require a random synchronizer token bound to the server session in addition to the trusted-Origin boundary; token comparison is constant-time and the client refreshes one stale token automatically.
+- Destructive seed passwords are explicit secret inputs and are never generated into or printed in process logs.
 
 ## Backend
 - **Voting overhaul:** vote / unvote (toggle) / switch with atomic conditional updates; self-voting blocked; reputation deltas apply and reverse correctly (+5/-10 and ±15 on switch).
@@ -37,7 +39,7 @@
 
 ## Testing & CI
 - Integration regression coverage includes registration/login, authorization negatives, vote math, multi-thread Active sorting, cross-page membership ordering, profile privacy, and cascade reputation repair.
-- Client unit tests (Vitest + React Testing Library) cover utilities, sorting semantics, listing excerpts, and dialog keyboard behavior.
+- Client unit tests (Vitest + React Testing Library) cover utilities, sorting semantics, listing excerpts, dialog keyboard behavior, and CSRF bootstrap/refresh/logout handling.
 - Playwright covers the assignment register/login flow, dedicated New Comment page, two-user vote lifecycle, two-browser realtime invalidation, and mobile keyboard/overflow behavior.
 - GitHub Actions CI: dependency audits, lint + unit + build, and integration/e2e jobs against a MongoDB replica set with diagnostics uploaded on browser failures.
 - GitHub's repository-level CodeQL default setup scans JavaScript and workflow data flows without duplicating configuration in this repository.

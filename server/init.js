@@ -1,5 +1,4 @@
 import bcrypt from "bcrypt";
-import { randomBytes } from "node:crypto";
 import mongoose from "mongoose";
 import Comment from "./models/Comment.js";
 import Community from "./models/Community.js";
@@ -9,11 +8,11 @@ import Report from "./models/Report.js";
 import User from "./models/User.js";
 import {
   PASSWORD_MIN_LENGTH,
+  PASSWORD_MAX_LENGTH,
   validateEmail
 } from "./utils/validation.js";
 
 const MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/phreddit";
-const DEMO_PASSWORD = process.env.DEMO_PASSWORD || randomBytes(18).toString("base64url");
 
 async function clearDatabase() {
   await Promise.all([
@@ -83,10 +82,11 @@ async function createComment({ content, post, commentedBy, parentComment = null 
 async function main() {
   const [emailArg, displayNameArg] = process.argv.slice(2);
   const password = process.env.ADMIN_PASSWORD;
+  const demoPassword = process.env.DEMO_PASSWORD;
 
-  if (!emailArg || !displayNameArg || !password) {
+  if (!emailArg || !displayNameArg || !password || !demoPassword) {
     console.error(
-      "Usage: ADMIN_PASSWORD=<password> CONFIRM_DATABASE_RESET=<database> node init.js <adminEmail> <adminDisplayName>"
+      "Usage: ADMIN_PASSWORD=<password> DEMO_PASSWORD=<password> CONFIRM_DATABASE_RESET=<database> node init.js <adminEmail> <adminDisplayName>"
     );
     process.exit(1);
   }
@@ -99,8 +99,20 @@ async function main() {
     process.exit(1);
   }
 
-  if (password.length < PASSWORD_MIN_LENGTH) {
-    console.error(`Admin password must be at least ${PASSWORD_MIN_LENGTH} characters.`);
+  if (password.length < PASSWORD_MIN_LENGTH || password.length > PASSWORD_MAX_LENGTH) {
+    console.error(
+      `Admin password must be ${PASSWORD_MIN_LENGTH}-${PASSWORD_MAX_LENGTH} characters.`
+    );
+    process.exit(1);
+  }
+
+  if (
+    demoPassword.length < PASSWORD_MIN_LENGTH ||
+    demoPassword.length > PASSWORD_MAX_LENGTH
+  ) {
+    console.error(
+      `Demo password must be ${PASSWORD_MIN_LENGTH}-${PASSWORD_MAX_LENGTH} characters.`
+    );
     process.exit(1);
   }
 
@@ -115,7 +127,7 @@ async function main() {
 
   const [adminPasswordHash, demoPasswordHash] = await Promise.all([
     bcrypt.hash(password, 12),
-    bcrypt.hash(DEMO_PASSWORD, 12)
+    bcrypt.hash(demoPassword, 12)
   ]);
 
   const admin = await User.create({
@@ -272,7 +284,7 @@ async function main() {
   });
 
   console.log(`Initialized ${databaseName} with admin user ${admin.email}.`);
-  console.log(`Demo users use password: ${DEMO_PASSWORD}`);
+  console.log("Created demo users alex@example.com, jamie@example.com, and taylor@example.com.");
   await mongoose.disconnect();
 }
 

@@ -8,7 +8,14 @@ export async function resetE2eDatabase(request) {
   const healthBody = await health.json();
   expect(healthBody.database).toMatch(/^phreddit_e2e(?:_|$)/);
 
-  const reset = await request.post(`${API_ORIGIN}/api/test/reset`);
+  const csrf = await request.get(`${API_ORIGIN}/api/auth/csrf`);
+  expect(csrf.ok()).toBe(true);
+  const { csrfToken } = await csrf.json();
+  expect(csrfToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
+
+  const reset = await request.post(`${API_ORIGIN}/api/test/reset`, {
+    headers: { "X-CSRF-Token": csrfToken }
+  });
   expect(reset.ok()).toBe(true);
 }
 
