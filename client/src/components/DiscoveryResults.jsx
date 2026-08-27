@@ -42,7 +42,7 @@ export default function DiscoveryResults({
                     {community.name}
                   </Link>
                   <span className="row-card-subtitle">
-                    {community.memberCount ?? 0} members
+                    {community.memberCount ?? 0} {community.memberCount === 1 ? "member" : "members"}
                   </span>
                   <RichText text={community.description} />
                 </div>
