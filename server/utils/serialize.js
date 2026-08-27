@@ -3,7 +3,7 @@
 // current user's own vote as `userVote`.
 export function presentVotable(doc, currentUserId) {
   const plain =
-    typeof doc?.toObject === "function" ? doc.toObject({ virtuals: true }) : { ...doc };
+    typeof doc?.toObject === "function" ? doc.toObject() : { ...doc };
   const votedBy = Array.isArray(plain.votedBy) ? plain.votedBy : [];
 
   let userVote = null;
@@ -15,5 +15,7 @@ export function presentVotable(doc, currentUserId) {
   }
 
   delete plain.votedBy;
+  delete plain.__v;
+  delete plain.id;
   return { ...plain, userVote };
 }

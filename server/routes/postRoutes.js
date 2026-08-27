@@ -106,6 +106,7 @@ async function buildListFilter(query) {
 
 function hydratePostsQuery(query) {
   return query
+    .select("-comments -__v")
     .populate("postedBy", "displayName")
     .populate("community", "name")
     .populate("linkFlair", "content");
@@ -349,7 +350,6 @@ router.post("/:id/view", async (req, res, next) => {
     if (!post) {
       return res.status(404).json({ error: "Post not found." });
     }
-    emitPostUpdated(post._id);
     return res.json({ views: post.views });
   } catch (error) {
     next(error);

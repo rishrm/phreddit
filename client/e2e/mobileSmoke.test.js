@@ -11,6 +11,8 @@ test("guest navigation stays usable at a mobile viewport", async ({ page }) => {
   await expect(page.getByRole("heading", { name: /all posts/i })).toBeVisible();
   await expect(page.locator(".sidebar")).toBeVisible();
   await expect(page.getByRole("button", { name: /create community/i })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /^create post$/i }).first()).toBeDisabled();
+  await expect(page.getByRole("button", { name: /^guest$/i })).toBeDisabled();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
   await page.keyboard.press("Home");

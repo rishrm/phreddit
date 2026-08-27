@@ -17,8 +17,11 @@ quickly as possible and credited when appropriate.
 ## Security Boundaries
 
 - Production authentication uses signed server sessions and HTTP-only cookies.
+- Read-only guest bootstrap does not allocate a persisted session; a CSRF
+  session is created on demand before the first unsafe request.
 - Password hashes are excluded by default at the Mongoose schema boundary and
-  selected explicitly only during password verification.
+  selected explicitly only during password verification. Unknown-user logins
+  perform a dummy bcrypt comparison to reduce account-enumeration timing.
 - The `x-test-user-id` header is accepted only when `NODE_ENV=test`.
 - User-authored Markdown is sanitized before rendering.
 - Post and comment voter lists are private and must pass through the shared
@@ -27,11 +30,15 @@ quickly as possible and credited when appropriate.
   require a random synchronizer token bound to the server session plus a
   trusted `Origin`. `express-rate-limit` protects every API route with a
   separate stricter budget for authentication attempts.
+- Every API response is `private, no-store` and carries a validated request ID;
+  internal errors expose that reference without exposing exception details.
 - Production replica sets use transactions for multi-document votes,
   ownership references, moderation, membership changes, and cascade deletion.
 - Administrator privileges are granted only through the guarded
   `admin:promote` script; application startup only verifies `ADMIN_EMAIL`.
 - Production startup requires `SESSION_SECRET`; secrets belong in hosting
   environment variables and must never be committed.
-- Destructive seed passwords are required secret inputs and are never printed
-  to logs or generated into output that could be captured by CI.
+- Remote/custom-database seed passwords are required secret inputs and reset
+  confirmation is explicit. The assignment's three-argument seed shorthand is
+  accepted only for the default local `phreddit` database; passwords are never
+  printed to logs.

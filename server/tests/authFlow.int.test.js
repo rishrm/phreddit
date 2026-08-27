@@ -24,6 +24,11 @@ test("registration returns to login flow, sessions persist, logout clears, login
   const email = `flow${stamp}@example.com`;
   const password = "SafePassword123!";
 
+  const guestSession = await supertest(app).get("/api/auth/me");
+  assert.equal(guestSession.status, 200);
+  assert.deepEqual(guestSession.body, { user: null });
+  assert.equal(guestSession.headers["set-cookie"], undefined);
+
   const shortPassword = await agent.post("/api/auth/register").send({
     firstName: "Flow",
     lastName: "Tester",
@@ -67,6 +72,13 @@ test("registration returns to login flow, sessions persist, logout clears, login
     password: "WrongPassword123!"
   });
   assert.equal(badLogin.status, 401);
+
+  const missingUserLogin = await agent.post("/api/auth/login").send({
+    email: `missing${stamp}@example.com`,
+    password: "WrongPassword123!"
+  });
+  assert.equal(missingUserLogin.status, 401);
+  assert.equal(missingUserLogin.body.error, badLogin.body.error);
 
   const goodLogin = await agent.post("/api/auth/login").send({ email, password });
   assert.equal(goodLogin.status, 200);

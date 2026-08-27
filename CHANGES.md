@@ -1,5 +1,14 @@
 # Changelog — Portfolio Release
 
+## Final production pass
+- Added weighted cross-entity discovery for communities, public users, and link flairs alongside the existing indexed post/comment search, with safe bounded projections and browser-level coverage.
+- Added filterable moderation resolution history, preserving evidence, resolver identity, timestamps, and optional notes after reported content is deleted.
+- Marked every API response `private, no-store`, added validated request correlation IDs and structured 500 logging, and made the deployment health check fail closed when MongoDB is unavailable.
+- Avoided read-only guest sessions, equalized missing-user and bad-password bcrypt work, narrowed session/user queries, and removed internal fields and comment-id arrays from listing payloads.
+- Lazy-loaded routed pages and added a root render recovery boundary. The measured initial build payload fell from 357.3 kB (112.3 kB gzip) to 199.2 kB (65.7 kB gzip).
+- Restored the assignment-required disabled Guest/Create Post banner controls and exact three-argument local seed mode without weakening remote database reset guards.
+- Expanded the matrix to 97 tests and updated CI dependency policy to track safe minor/patch releases while intentionally deferring framework/database majors.
+
 ## Security
 - **Fixed a critical auth bypass:** the `x-test-user-id` header is now honored only when `NODE_ENV=test` (previously it worked unconditionally, allowing anyone to act as any user in production).
 - Session ID regeneration on login (prevents session fixation); registration returns to Welcome before authentication.

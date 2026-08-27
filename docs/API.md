@@ -1,8 +1,11 @@
 # Phreddit API
 
 All endpoints are rooted at `/api`. Browser requests use a signed, HTTP-only
-session cookie. JSON errors have the shape `{ "error": "message" }`; registration
-validation may return `{ "errors": ["message"] }`.
+session cookie. Every response is marked `Cache-Control: private, no-store` and
+includes a bounded `X-Request-ID`. JSON errors have the shape
+`{ "error": "message" }`; registration validation may return
+`{ "errors": ["message"] }`, and unhandled server errors also include the
+request ID used by structured server logs.
 
 ## Request Security
 
@@ -13,8 +16,9 @@ path-specific authentication budget.
 
 In production, `POST`, `PUT`, `PATCH`, and `DELETE` requests must include an
 `X-CSRF-Token` matching the random synchronizer token stored in the signed
-server session. The token is returned by `GET /auth/me` and `GET /auth/csrf`;
-login rotates both the session ID and token. A missing or stale token returns
+server session. Authenticated `GET /auth/me` and public `GET /auth/csrf` return
+the token; a guest `GET /auth/me` stays session-free. Login rotates both the
+session ID and token. A missing or stale token returns
 `403` with code `CSRF_TOKEN_INVALID`. The client refreshes once and retries.
 
 Unsafe production requests must also include an `Origin` matching
@@ -30,7 +34,7 @@ second independent CSRF boundary. Tests may enable the token middleware with
 | POST | `/auth/register` | Public | Create an account; does not start a session |
 | POST | `/auth/login` | Public | Regenerate the session and authenticate |
 | POST | `/auth/logout` | Public | Destroy the current session |
-| GET | `/auth/me` | Public | Return the current user or `null`, plus the session CSRF token |
+| GET | `/auth/me` | Public | Return the current user and token; guests receive only `{ user: null }` |
 | GET | `/auth/csrf` | Public | Return or initialize the session CSRF token |
 
 ## Communities and Discovery
@@ -45,6 +49,11 @@ second independent CSRF boundary. Tests may enable the token middleware with
 | POST | `/communities/:id/leave` | User | Leave a community |
 | GET | `/linkflairs` | Public | List link flairs |
 | POST | `/linkflairs` | User | Create a unique link flair |
+| GET | `/search?q=` | Public | Up to six safe community, public-user, and flair matches per group |
+
+Discovery uses weighted text indexes. Community results include a computed
+member count rather than member IDs; user results include only display name and
+reputation; flair results include only their public label.
 
 ## Posts and Comments
 
@@ -79,7 +88,7 @@ when the guard is reached.
 | DELETE | `/users/:id` | Admin | Cascade-delete a non-admin account |
 | POST/DELETE | `/users/me/saved-posts/:postId` | User | Save or unsave a post |
 | POST | `/reports/posts/:postId` | User | Report a post once while pending |
-| GET | `/reports` | Admin | Moderation queue |
+| GET | `/reports?status=` | Admin | Queue/history filtered by `pending`, `dismissed`, `content_removed`, or `all` |
 | POST | `/reports/:id/resolve` | Admin | Atomically claim, dismiss, or remove reported content |
 
 State-changing post/comment operations emit `post:updated` to the corresponding

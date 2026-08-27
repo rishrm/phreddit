@@ -13,15 +13,18 @@ import communityRoutes from "./routes/communityRoutes.js";
 import linkFlairRoutes from "./routes/linkflairRoutes.js";
 import postRoutes from "./routes/postRoutes.js";
 import reportRoutes from "./routes/reportRoutes.js";
+import searchRoutes from "./routes/searchRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import { attachCurrentUser } from "./middleware/auth.js";
 import { apiRateLimiter } from "./middleware/rateLimit.js";
+import { requestContext } from "./middleware/requestContext.js";
 import {
   createTrustedOriginGuard,
   csrfProtection
 } from "./middleware/requestSecurity.js";
 import { setIo } from "./realtime.js";
 import { ensureConfiguredAdmin } from "./utils/adminBootstrap.js";
+import { databaseHealth } from "./utils/health.js";
 import Comment from "./models/Comment.js";
 import Community from "./models/Community.js";
 import LinkFlair from "./models/LinkFlair.js";
@@ -69,6 +72,7 @@ export function createApp({ useSessionStore = true } = {}) {
   }
 
   app.use(helmet());
+  app.use("/api", requestContext);
 
   app.use(
     cors({
@@ -118,11 +122,13 @@ export function createApp({ useSessionStore = true } = {}) {
   app.use(attachCurrentUser);
 
   app.get("/api/health", (_req, res) => {
-    const payload = { ok: true };
-    if (process.env.NODE_ENV === "test" && process.env.ENABLE_E2E_RESET === "true") {
-      payload.database = mongoose.connection.name;
-    }
-    res.json(payload);
+    const health = databaseHealth({
+      readyState: mongoose.connection.readyState,
+      includeDatabase:
+        process.env.NODE_ENV === "test" && process.env.ENABLE_E2E_RESET === "true",
+      databaseName: mongoose.connection.name
+    });
+    return res.status(health.status).json(health.payload);
   });
 
   if (process.env.NODE_ENV === "test" && process.env.ENABLE_E2E_RESET === "true") {
@@ -148,16 +154,18 @@ export function createApp({ useSessionStore = true } = {}) {
   app.use("/api/communities", communityRoutes);
   app.use("/api/linkflairs", linkFlairRoutes);
   app.use("/api/posts", postRoutes);
+  app.use("/api/search", searchRoutes);
   app.use("/api/comments", commentRoutes);
   app.use("/api/reports", reportRoutes);
 
   app.use((req, res) => {
     res.status(404).json({
-      error: `Route not found: ${req.method} ${req.originalUrl}`
+      error: `Route not found: ${req.method} ${req.originalUrl}`,
+      requestId: req.requestId
     });
   });
 
-  app.use((error, _req, res, _next) => {
+  app.use((error, req, res, _next) => {
     let status = error.status || 500;
     let message = error.message || "Internal server error.";
 
@@ -178,12 +186,18 @@ export function createApp({ useSessionStore = true } = {}) {
     }
 
     if (status >= 500) {
-      console.error(error);
+      console.error({
+        requestId: req.requestId,
+        method: req.method,
+        path: req.originalUrl,
+        error
+      });
       message = "Internal server error.";
     }
 
     res.status(status).json({
-      error: message
+      error: message,
+      requestId: req.requestId
     });
   });
 

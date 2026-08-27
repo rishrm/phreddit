@@ -86,4 +86,6 @@ userSchema.set("toJSON", {
   }
 });
 
+userSchema.index({ displayName: "text" }, { name: "user_discovery" });
+
 export default mongoose.model("User", userSchema);

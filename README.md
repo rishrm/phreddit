@@ -3,9 +3,9 @@
 [![CI](https://github.com/rishrm/phreddit/actions/workflows/ci.yml/badge.svg)](https://github.com/rishrm/phreddit/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Phreddit is a full-stack Reddit-inspired community forum built with React, Express, MongoDB, and Mongoose. It supports guest browsing, session-based accounts, communities, posts, link flair, arbitrary-depth threaded comments, saved posts, toggleable reputation-aware voting, live post updates over WebSockets, Markdown rendering, public user profiles, reporting, and admin moderation flows.
+Phreddit is a full-stack Reddit-inspired community forum built with React, Express, MongoDB, and Mongoose. It supports guest browsing, session-based accounts, communities, posts, link flair, arbitrary-depth threaded comments, saved posts, toggleable reputation-aware voting, live post updates over WebSockets, Markdown rendering, cross-entity discovery, public user profiles, reporting, and auditable admin moderation flows.
 
-The project is structured as a portfolio-ready MERN application with client-side routing, server-side pagination and sorting, isolated backend integration tests, client unit tests, Playwright e2e coverage, and a CI pipeline.
+The project is structured as a portfolio-ready MERN application with lazy client-side routes, server-side pagination and sorting, isolated backend integration tests, client unit tests, Playwright e2e coverage, and a CI pipeline.
 
 **Live demo:** [phreddit.vercel.app](https://phreddit.vercel.app)
 Visitors can browse as a guest or register a new account.
@@ -22,17 +22,18 @@ Visitors can browse as a guest or register a new account.
 - Client-side routing with real URLs and deep links (`/posts/:id`, `/communities/:id`, `/users/:id`, `/search?q=...`)
 - Live post pages: comments, votes, and edits from other users appear in real time over Socket.IO
 - Server-side pagination and sorting (Newest, Oldest, Active) with a Load More UI
-- Full-text search across post titles, content, and comments using MongoDB text indexes
+- Unified discovery across posts, comments, communities, public users, and link flairs using weighted MongoDB text indexes
 - Toggleable voting: vote, unvote, or switch votes with atomic database updates; no self-voting; reputation deltas reverse correctly
 - Arbitrary-depth threaded comments assembled from one indexed query (with a 5,000-comment response guard), plus Newest/Top sorting
 - Markdown post and comment bodies, sanitized with DOMPurify before rendering
 - Public user profiles showing display name, reputation, and recent activity (no private data)
 - Saved posts/bookmarks with a dedicated profile tab
-- Post reporting with duplicate-report protection, an admin moderation queue, and optional resolution notes
+- Post reporting with duplicate-report protection, an admin queue, optional resolution notes, and filterable resolution history that preserves evidence after deletion
 - Admin user list, viewing another user's profile, and cascade user deletion behind an accessible confirm dialog
 - Cascade deletion for communities, posts, comments, replies, and user-owned content
-- Session hardening: session ID regeneration on login, session-bound CSRF tokens, trusted-origin checks, helmet headers, CORS allowlist, and bounded global/auth rate limiting
-- Responsive layout, keyboard-visible focus states, loading/empty/error states, and toast notifications with distinct success/error styling
+- Session hardening: session ID regeneration, constant-work invalid-login verification, on-demand guest CSRF sessions, trusted-origin checks, Helmet headers, CORS allowlist, and bounded global/auth rate limiting
+- Private no-store API delivery, validated request correlation IDs, and a database-aware health check for deployment diagnostics
+- Responsive layout, keyboard-visible focus states, lazy route loading, a render recovery boundary, loading/empty/error states, and distinct success/error toasts
 - Unit (server + client), integration, and Playwright e2e tests in GitHub Actions, plus repository-level CodeQL analysis
 
 ## Tech Stack
@@ -83,6 +84,9 @@ cp server/.env.example server/.env   # edit values as needed
 ADMIN_PASSWORD='AdminPass123!' DEMO_PASSWORD='DemoPass123!' \
 CONFIRM_DATABASE_RESET=phreddit node server/init.js admin@example.com adminuser
 
+# Assignment-compatible shorthand for the default local phreddit database
+node server/init.js admin@example.com adminuser 'AdminPass123!'
+
 # 4) Run the API (http://localhost:8000)
 npm --prefix server run dev
 
@@ -94,7 +98,7 @@ The Vite dev server proxies both `/api` and the `/socket.io` WebSocket to the AP
 
 ## Demo Accounts
 
-The optional seed command creates one administrator plus three sample users. Both passwords are required inputs and are never printed; keep them in a password manager or hosting secret store.
+The optional seed command creates one administrator plus three sample users. Remote/custom-database seeds require environment secrets and explicit reset confirmation; the three-argument shorthand is accepted only for the default local `phreddit` database. Passwords are never printed.
 
 | Role | Email | Password |
 |---|---|---|
@@ -103,7 +107,7 @@ The optional seed command creates one administrator plus three sample users. Bot
 | User | `jamie@example.com` | `DEMO_PASSWORD` |
 | User | `taylor@example.com` | `DEMO_PASSWORD` |
 
-`server/init.js` erases the selected database and refuses to run unless `CONFIRM_DATABASE_RESET` exactly matches that database name.
+`server/init.js` erases the selected database. It requires `CONFIRM_DATABASE_RESET` to exactly match the database name except in the assignment-compatible default-local mode shown above.
 
 ## Environment Variables
 
@@ -154,12 +158,12 @@ Server extras: `npm --prefix server run admin:promote` (explicit administrator p
 
 | Suite | Command | Needs MongoDB | CI job |
 |---|---|---|---|
-| Server unit (node:test) | `npm --prefix server run test:unit` | No | lint-and-unit |
-| Client unit (Vitest + RTL) | `npm --prefix client run test:unit` | No | lint-and-unit |
-| Server integration (26 supertest tests, disposable DB per data suite) | `npm run test:int` | Yes | integration |
+| Server unit (31 node:test tests) | `npm --prefix server run test:unit` | No | lint-and-unit |
+| Client unit (33 Vitest + RTL tests) | `npm --prefix client run test:unit` | No | lint-and-unit |
+| Server integration (29 supertest tests, disposable DB per data suite) | `npm run test:int` | Yes | integration |
 | End-to-end (4 Playwright browser flows) | `npm run test:e2e` | Yes | e2e |
 
-The current matrix contains 81 automated tests: 24 server unit, 26 server integration, 27 client unit, and 4 Playwright flows. Integration tests spin up Express in-process against throwaway databases and run in CI against a MongoDB replica set with transactions forced. Regression coverage includes session-bound CSRF enforcement, multi-thread Active sorting, membership-aware pagination, private vote serialization, authoritative cascade deletion, moderation-claim races, and vote/reputation lifecycles. Playwright runs with CSRF enforcement enabled and adds desktop creation/profile/voting flows, a two-browser realtime check, and mobile keyboard/overflow smoke coverage.
+The current matrix contains 97 automated tests: 31 server unit, 29 server integration, 33 client unit, and 4 Playwright flows. Integration tests spin up Express in-process against throwaway databases and run in CI against a MongoDB replica set with transactions forced. Regression coverage includes session-bound CSRF enforcement, guest session avoidance, DB-aware health, cross-entity discovery privacy, multi-thread Active sorting, membership-aware pagination, private vote serialization, authoritative cascade deletion, moderation history/claim races, and vote/reputation lifecycles. Playwright runs with CSRF enforcement enabled and covers desktop creation/profile/voting/discovery, a two-browser realtime check, and mobile keyboard/overflow behavior.
 
 Contributing with an AI coding agent? Repo commands and invariants live in [AGENTS.md](AGENTS.md).
 
@@ -205,9 +209,10 @@ The client and API deploy separately.
 - **Realtime:** route handlers publish through a small `realtime.js` wrapper (`emitPostUpdated`). Clients on a post page join a `post:<id>` room and refetch on updates — an invalidation-style design that stays correct without duplicating server state on the client.
 - **Voting:** vote add/remove/switch are single conditional `findOneAndUpdate` operations, so concurrent requests cannot double-count. `votedBy` is never sent to clients; each response carries only the caller's own `userVote`.
 - **Comments:** fetched flat with one indexed query (`{ post: 1, createdAt: -1 }`) and assembled iteratively in memory, so nesting depth is not truncated by recursive populate. A 5,000-comment response cap prevents unbounded memory use and is surfaced to the UI.
-- **Search:** MongoDB text indexes on posts and comments; matching ids are resolved first because `$text` cannot appear inside `$or`.
+- **Discovery:** post/comment search resolves matching ids first because `$text` cannot appear inside `$or`; a separate bounded endpoint uses weighted text indexes to return safe community, public-user, and flair matches without exposing member lists or email addresses.
 - **Listings:** pagination and all three sorts are computed database-side; "Active" uses an aggregation with a comments `$lookup`. Page-number pagination is intentional at this scale; cursor pagination is the documented next step if feeds grow unbounded.
-- **Sessions:** stored in MongoDB via connect-mongo; hashes are excluded by default at the Mongoose schema boundary, and session IDs regenerate on login. The client bootstraps a random synchronizer token stored only in the server session and sends it on every unsafe request, refreshing once after expiration. Vercel proxies REST requests through same-origin `/api`, allowing `SameSite=Lax`; unsafe requests must also come from `CLIENT_ORIGIN`. Registration intentionally returns to Welcome before login. The `x-test-user-id` header is inert outside `NODE_ENV=test`.
+- **Delivery:** all API responses are `private, no-store` and carry a validated `X-Request-ID`; 500 responses surface that reference to the UI. Route-level code splitting reduced the measured initial production JavaScript from 357.3 kB (112.3 kB gzip) to 199.2 kB (65.7 kB gzip), with Markdown and heavier pages loaded on demand.
+- **Sessions:** stored in MongoDB via connect-mongo; hashes are excluded by default at the Mongoose schema boundary, session IDs regenerate on login, and missing-user login attempts perform the same bcrypt work as bad passwords. Guests do not allocate a session during read-only bootstrap; the client obtains a synchronizer token only before the first unsafe request and refreshes it once after expiration. Vercel proxies REST through same-origin `/api`, allowing `SameSite=Lax`; unsafe requests must also come from `CLIENT_ORIGIN`. Registration intentionally returns to Welcome before login. The `x-test-user-id` header is inert outside `NODE_ENV=test`.
 - **Transactions and cascade deletes:** supported replica sets use MongoDB transactions for votes, reputation, ownership references, memberships, moderation, and children-first cascade deletion. Standalone local MongoDB uses the same idempotent operations without a transaction; CI forces the replica-set path.
 - **Markdown** is rendered client-side with `marked` and sanitized with DOMPurify (scripts, event handlers, and `javascript:` URLs are stripped; links open in a new tab with `rel="noopener"`).
 
@@ -224,6 +229,8 @@ The release branch includes fixes found through adversarial review rather than h
 - User-content limits and Markdown hyperlink rules are enforced by both forms and the API.
 - Duplicate-key races return a stable `409`, production requires a session secret, and auth limiter storage is bounded.
 - A global per-IP request budget protects every API route; unsafe methods require a constant-time-validated session CSRF token and a trusted browser origin.
+- Read-only guest bootstrap creates no session cookie; private API responses cannot be retained by shared browser/CDN caches.
+- Database health fails closed with `503`, while request IDs connect user-visible 500 references to structured server logs.
 - Destructive dialogs trap and restore focus; profile tabs support arrow, Home, and End keys.
 
 ## Portfolio Talking Points
@@ -234,6 +241,8 @@ The release branch includes fixes found through adversarial review rather than h
 - Added Socket.IO live updates with a no-op-in-tests emitter so the realtime layer never leaks into the test suite.
 - Closed a test-only auth header behind `NODE_ENV=test` after identifying it as a production auth bypass during a security review.
 - Added layered request security after CodeQL review: global throttling, session-bound synchronizer tokens, strict unsafe-request origin checks, linear-time validators, and explicit database-query normalization.
+- Cut the initial JavaScript payload by 44% through route-level lazy loading, while adding a recoverable render boundary for failed chunks or unexpected component errors.
+- Built one discovery experience over separate indexed data contracts, preserving private user/community fields and keeping post pagination independent from lightweight entity matches.
 
 ## Assignment Contribution
 

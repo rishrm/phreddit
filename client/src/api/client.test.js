@@ -19,19 +19,21 @@ afterEach(() => {
 });
 
 describe("API CSRF handling", () => {
-  it("captures the bootstrap token and sends it on unsafe requests", async () => {
+  it("does not persist a guest session until an unsafe request needs a token", async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse({ user: null, csrfToken: "bootstrap-token" }))
+      .mockResolvedValueOnce(jsonResponse({ user: null }))
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: "on-demand-token" }))
       .mockResolvedValueOnce(jsonResponse({ _id: "community-1" }, 201));
     const api = await loadApiWithFetch(fetchMock);
 
     await api.me();
     await api.createCommunity({ name: "webdev", description: "Frontend notes" });
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    const mutationOptions = fetchMock.mock.calls[1][1];
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/auth/csrf");
+    const mutationOptions = fetchMock.mock.calls[2][1];
     expect(new Headers(mutationOptions.headers).get("X-CSRF-Token"))
-      .toBe("bootstrap-token");
+      .toBe("on-demand-token");
   });
 
   it("refreshes an invalid token and retries the mutation exactly once", async () => {
@@ -72,5 +74,19 @@ describe("API CSRF handling", () => {
     expect(fetchMock.mock.calls[2][0]).toBe("/api/auth/csrf");
     expect(new Headers(fetchMock.mock.calls[3][1].headers).get("X-CSRF-Token"))
       .toBe("new-session-token");
+  });
+
+  it("adds a support reference to unexpected server errors", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({
+      error: "Internal server error.",
+      requestId: "request-500"
+    }, 500));
+    const api = await loadApiWithFetch(fetchMock);
+
+    await expect(api.getCommunities()).rejects.toMatchObject({
+      message: "Internal server error. Reference: request-500",
+      requestId: "request-500",
+      status: 500
+    });
   });
 });

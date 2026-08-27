@@ -7,6 +7,12 @@ updates:
     groups:
       client-dependencies:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: react
+        update-types: ["version-update:semver-major"]
+      - dependency-name: react-dom
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: npm
     directory: /server
     schedule:
@@ -14,6 +20,16 @@ updates:
     groups:
       server-dependencies:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: connect-mongo
+        update-types: ["version-update:semver-major"]
+      - dependency-name: dotenv
+        update-types: ["version-update:semver-major"]
+      - dependency-name: express
+        update-types: ["version-update:semver-major"]
+      - dependency-name: mongoose
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:

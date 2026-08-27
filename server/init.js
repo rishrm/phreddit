@@ -11,6 +11,10 @@ import {
   PASSWORD_MAX_LENGTH,
   validateEmail
 } from "./utils/validation.js";
+import {
+  databaseResetIsConfirmed,
+  resolveSeedInputs
+} from "./utils/seedConfig.js";
 
 const MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/phreddit";
 
@@ -80,13 +84,21 @@ async function createComment({ content, post, commentedBy, parentComment = null 
 }
 
 async function main() {
-  const [emailArg, displayNameArg] = process.argv.slice(2);
-  const password = process.env.ADMIN_PASSWORD;
-  const demoPassword = process.env.DEMO_PASSWORD;
+  const {
+    email: emailArg,
+    displayName: displayNameArg,
+    adminPassword: password,
+    demoPassword
+  } = resolveSeedInputs({
+    args: process.argv.slice(2),
+    env: process.env,
+    mongoUri: MONGO_URI
+  });
 
   if (!emailArg || !displayNameArg || !password || !demoPassword) {
     console.error(
-      "Usage: ADMIN_PASSWORD=<password> DEMO_PASSWORD=<password> CONFIRM_DATABASE_RESET=<database> node init.js <adminEmail> <adminDisplayName>"
+      "Usage (recommended): ADMIN_PASSWORD=<password> DEMO_PASSWORD=<password> CONFIRM_DATABASE_RESET=<database> node init.js <adminEmail> <adminDisplayName>\n" +
+      "Local assignment mode: node init.js <adminEmail> <adminDisplayName> <adminPassword>"
     );
     process.exit(1);
   }
@@ -118,7 +130,11 @@ async function main() {
 
   await mongoose.connect(MONGO_URI);
   const databaseName = mongoose.connection.name;
-  if (process.env.CONFIRM_DATABASE_RESET !== databaseName) {
+  if (!databaseResetIsConfirmed({
+    mongoUri: MONGO_URI,
+    databaseName,
+    confirmation: process.env.CONFIRM_DATABASE_RESET
+  })) {
     throw new Error(
       `Refusing to erase ${databaseName}. Set CONFIRM_DATABASE_RESET=${databaseName} to continue.`
     );

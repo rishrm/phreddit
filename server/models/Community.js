@@ -37,4 +37,9 @@ const communitySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+communitySchema.index(
+  { name: "text", description: "text" },
+  { weights: { name: 5, description: 1 }, name: "community_discovery" }
+);
+
 export default mongoose.model("Community", communitySchema);

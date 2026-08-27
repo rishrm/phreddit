@@ -3,6 +3,7 @@ import { useOutletContext, useSearchParams } from "react-router-dom";
 import { api } from "../api/client.js";
 import SortButtons from "../components/SortButtons.jsx";
 import PostList from "../components/PostList.jsx";
+import DiscoveryResults from "../components/DiscoveryResults.jsx";
 
 const PAGE_SIZE = 20;
 
@@ -21,6 +22,13 @@ export default function Search() {
   const [selectedFlair, setSelectedFlair] = useState("");
   const [currentSort, setCurrentSort] = useState("newest");
   const [searchTruncated, setSearchTruncated] = useState(false);
+  const [discovery, setDiscovery] = useState({
+    communities: [],
+    users: [],
+    linkFlairs: []
+  });
+  const [discoveryLoading, setDiscoveryLoading] = useState(false);
+  const [discoveryError, setDiscoveryError] = useState("");
   const requestIdRef = useRef(0);
 
   const load = useCallback(
@@ -68,6 +76,40 @@ export default function Search() {
     return () => controller.abort();
   }, [load, refreshToken]);
 
+  const loadDiscovery = useCallback(async (signal) => {
+    if (!query) {
+      setDiscovery({ communities: [], users: [], linkFlairs: [] });
+      setDiscoveryError("");
+      setDiscoveryLoading(false);
+      return;
+    }
+    try {
+      setDiscoveryLoading(true);
+      setDiscoveryError("");
+      const data = await api.discover(query, { signal });
+      setDiscovery({
+        communities: data.communities || [],
+        users: data.users || [],
+        linkFlairs: data.linkFlairs || []
+      });
+    } catch (loadError) {
+      if (loadError.name === "AbortError") return;
+      setDiscoveryError(loadError.message);
+    } finally {
+      if (!signal?.aborted) setDiscoveryLoading(false);
+    }
+  }, [query]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadDiscovery(controller.signal);
+    return () => controller.abort();
+  }, [loadDiscovery, refreshToken]);
+
+  useEffect(() => {
+    setSelectedFlair("");
+  }, [query]);
+
   useEffect(() => {
     const controller = new AbortController();
     api
@@ -82,7 +124,7 @@ export default function Search() {
   const headerText = !query
     ? "Type a search above to find posts."
     : total === 0 && !loading
-      ? `No results found for: ${query}`
+      ? `No post results for: ${query}`
       : `Results for: ${query}`;
 
   return (
@@ -110,6 +152,15 @@ export default function Search() {
           <button type="button" onClick={() => setSelectedFlair("")}>Clear</button>
         )}
       </div>
+      {query && (
+        <DiscoveryResults
+          results={discovery}
+          loading={discoveryLoading}
+          error={discoveryError}
+          onRetry={() => loadDiscovery()}
+          onSelectFlair={setSelectedFlair}
+        />
+      )}
       <p className="post-count">Showing {posts.length} of {total} posts</p>
       {searchTruncated && (
         <p className="muted" role="status">
