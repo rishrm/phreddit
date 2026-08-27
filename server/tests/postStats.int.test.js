@@ -7,6 +7,10 @@ import Post from "../models/Post.js";
 import User from "../models/User.js";
 import { createApp } from "../server.js";
 import {
+  backfillMissingPostActivity,
+  syncPostActivity
+} from "../utils/postActivity.js";
+import {
   clearTestDb,
   connectTestDb,
   createTestCommunity,
@@ -75,6 +79,7 @@ test("Post listings include total comment count, latest comment time, and flair 
     Comment.collection.updateOne({ _id: rootComment._id }, { $set: { createdAt: olderDate } }),
     Comment.collection.updateOne({ _id: reply._id }, { $set: { createdAt: latestDate } })
   ]);
+  await syncPostActivity([activePost._id]);
 
   const app = createApp({ useSessionStore: false });
   const allResponse = await supertest(app).get("/api/posts");
@@ -157,4 +162,95 @@ test("Deleting a user removes their votes and corrects vote totals", async (t) =
   assert.equal(updatedComment.votedBy.length, 0);
   const updatedAuthor = await User.findById(author._id);
   assert.equal(updatedAuthor.reputation, 100);
+});
+
+test("Comment mutations maintain materialized post activity", async (t) => {
+  await connectTestDb();
+  await clearTestDb();
+
+  t.after(async () => {
+    await clearTestDb();
+    await disconnectTestDb();
+  });
+
+  const user = await createTestUser();
+  const community = await createTestCommunity(user);
+  const post = await Post.create({
+    title: "Materialized activity",
+    content: "Comment metadata should stay synchronized.",
+    postedBy: user._id,
+    community: community._id,
+    comments: []
+  });
+  const app = createApp({ useSessionStore: false });
+
+  const rootResponse = await supertest(app)
+    .post("/api/comments")
+    .set("x-test-user-id", String(user._id))
+    .send({ post: String(post._id), content: "Root activity" });
+  assert.equal(rootResponse.status, 201);
+
+  const replyResponse = await supertest(app)
+    .post("/api/comments")
+    .set("x-test-user-id", String(user._id))
+    .send({
+      post: String(post._id),
+      parentComment: String(rootResponse.body.comment._id),
+      content: "Reply activity"
+    });
+  assert.equal(replyResponse.status, 201);
+
+  const activePost = await Post.findById(post._id).lean();
+  assert.equal(activePost.commentCount, 2);
+  assert.ok(activePost.latestCommentAt instanceof Date);
+
+  const deleteResponse = await supertest(app)
+    .delete(`/api/comments/${rootResponse.body.comment._id}`)
+    .set("x-test-user-id", String(user._id));
+  assert.equal(deleteResponse.status, 200);
+
+  const quietPost = await Post.findById(post._id).lean();
+  assert.equal(quietPost.commentCount, 0);
+  assert.equal(quietPost.latestCommentAt, null);
+});
+
+test("Legacy posts receive a bounded, idempotent activity backfill", async (t) => {
+  await connectTestDb();
+  await clearTestDb();
+
+  t.after(async () => {
+    await clearTestDb();
+    await disconnectTestDb();
+  });
+
+  const user = await createTestUser();
+  const community = await createTestCommunity(user);
+  const post = await Post.create({
+    title: "Legacy activity",
+    content: "This post predates materialized activity fields.",
+    postedBy: user._id,
+    community: community._id,
+    comments: []
+  });
+  const comment = await Comment.create({
+    content: "Legacy comment",
+    commentedBy: user._id,
+    post: post._id,
+    parentComment: null,
+    replies: []
+  });
+  await Post.collection.updateOne(
+    { _id: post._id },
+    { $unset: { commentCount: "", latestCommentAt: "" } }
+  );
+
+  assert.equal(await backfillMissingPostActivity({ batchSize: 1 }), 1);
+  assert.equal(await backfillMissingPostActivity({ batchSize: 1 }), 0);
+
+  const backfilled = await Post.findById(post._id).lean();
+  assert.equal(backfilled.commentCount, 1);
+  assert.equal(
+    backfilled.latestCommentAt.toISOString(),
+    comment.createdAt.toISOString()
+  );
 });

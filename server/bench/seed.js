@@ -6,6 +6,7 @@ import Comment from "../models/Comment.js";
 import Community from "../models/Community.js";
 import Post from "../models/Post.js";
 import User from "../models/User.js";
+import { syncPostActivity } from "../utils/postActivity.js";
 
 const MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/phreddit_bench";
 const POST_COUNT = Number(process.argv[2] || 2000);
@@ -82,6 +83,7 @@ async function main() {
     }
   }
   await Comment.insertMany(comments);
+  await syncPostActivity(createdPosts.map((post) => post._id));
 
   console.log(`Seeded ${createdPosts.length} posts and ${comments.length} comments into ${databaseName}.`);
   await mongoose.disconnect();

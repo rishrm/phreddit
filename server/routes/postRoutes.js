@@ -160,50 +160,19 @@ async function normalizeLinkFlair(value, session = null) {
 }
 
 // "Active" ranks posts with comment activity first (by latest comment or
-// reply), then quiet posts by creation date. Computed in an aggregation so
-// it can be sorted and paginated database-side.
+// reply), then quiet posts by creation date. Comment activity is maintained
+// transactionally on each post, avoiding a per-post comment lookup here.
 async function listActivePosts(filter, skip, limit, joinedIds) {
+  const joinedStages = joinedIds.length > 0
+    ? [joinedRankStage(joinedIds)]
+    : [];
+  const sort = joinedIds.length > 0
+    ? { joinedRank: -1, latestCommentAt: -1, createdAt: -1, _id: -1 }
+    : { latestCommentAt: -1, createdAt: -1, _id: -1 };
   const ordered = await Post.aggregate([
     { $match: filter },
-    {
-      $lookup: {
-        from: "comments",
-        let: { postId: "$_id" },
-        pipeline: [
-          { $match: { $expr: { $eq: ["$post", "$$postId"] } } },
-          {
-            $group: {
-              _id: null,
-              commentCount: { $sum: 1 },
-              latestCommentAt: { $max: "$createdAt" }
-            }
-          }
-        ],
-        as: "commentStats"
-      }
-    },
-    {
-      $addFields: {
-        commentCount: {
-          $ifNull: [{ $arrayElemAt: ["$commentStats.commentCount", 0] }, 0]
-        },
-        latestCommentAt: {
-          $arrayElemAt: ["$commentStats.latestCommentAt", 0]
-        }
-      }
-    },
-    {
-      $addFields: {
-        hasComments: { $gt: ["$commentCount", 0] }
-      }
-    },
-    {
-      $addFields: {
-        activityAt: { $cond: ["$hasComments", "$latestCommentAt", "$createdAt"] }
-      }
-    },
-    joinedRankStage(joinedIds),
-    { $sort: { joinedRank: -1, hasComments: -1, activityAt: -1, _id: -1 } },
+    ...joinedStages,
+    { $sort: sort },
     { $skip: skip },
     { $limit: limit },
     { $project: { _id: 1, commentCount: 1, latestCommentAt: 1 } }
