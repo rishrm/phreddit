@@ -163,6 +163,15 @@ test("Admins can review, dismiss, and remove reported posts", async (t) => {
   assert.equal(dismissResponse.status, 200);
   assert.equal(dismissResponse.body.reports.length, 0);
 
+  const dismissedList = await supertest(app)
+    .get("/api/reports")
+    .query({ status: "dismissed" })
+    .set("x-test-user-id", String(admin._id));
+  assert.equal(dismissedList.status, 200);
+  assert.equal(dismissedList.body.reports.length, 1);
+  assert.equal(dismissedList.body.reports[0].resolutionNote, "Allowed after review");
+  assert.equal(dismissedList.body.reports[0].resolvedBy.displayName, "adminUser");
+
   const secondPost = await Post.create({
     title: "Remove this post",
     content: "This report resolution should delete the post.",
@@ -183,6 +192,19 @@ test("Admins can review, dismiss, and remove reported posts", async (t) => {
 
   assert.equal(removeResponse.status, 200);
   assert.equal(await Post.findById(secondPost._id), null);
+
+  const removalHistory = await supertest(app)
+    .get("/api/reports")
+    .query({ status: "content_removed" })
+    .set("x-test-user-id", String(admin._id));
+  assert.equal(removalHistory.status, 200);
+  assert.equal(removalHistory.body.reports.length, 1);
+  assert.equal(removalHistory.body.reports[0].targetPost, null);
+  assert.equal(removalHistory.body.reports[0].contentSnapshot.title, "Remove this post");
+  assert.equal(
+    removalHistory.body.reports[0].resolutionNote,
+    "Violates community expectations"
+  );
 
   const resolvedReport = await Report.findById(secondReportResponse.body.report._id);
   assert.equal(resolvedReport.status, "content_removed");

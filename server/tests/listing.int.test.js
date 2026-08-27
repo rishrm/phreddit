@@ -77,6 +77,10 @@ test("post listings paginate, sort server-side, and search via text indexes", as
   // Pagination: newest-first, two pages.
   const pageOne = await supertest(app).get("/api/posts").query({ limit: 2, page: 1 });
   assert.equal(pageOne.status, 200);
+  assert.equal(Object.hasOwn(pageOne.body.posts[0], "comments"), false);
+  assert.equal(Object.hasOwn(pageOne.body.posts[0], "votedBy"), false);
+  assert.equal(Object.hasOwn(pageOne.body.posts[0], "__v"), false);
+  assert.equal(Object.hasOwn(pageOne.body.posts[0], "id"), false);
   assert.equal(pageOne.body.posts.length, 2);
   assert.equal(pageOne.body.total, 3);
   assert.equal(pageOne.body.hasMore, true);

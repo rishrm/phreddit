@@ -1,5 +1,18 @@
 import User from "../models/User.js";
 
+export const SESSION_USER_FIELDS = [
+  "firstName",
+  "lastName",
+  "email",
+  "displayName",
+  "reputation",
+  "isAdmin",
+  "joinedCommunities",
+  "savedPosts",
+  "createdAt",
+  "updatedAt"
+].join(" ");
+
 export async function attachCurrentUser(req, _res, next) {
   try {
     // The x-test-user-id header is a test-only convenience. It is disabled
@@ -8,7 +21,9 @@ export async function attachCurrentUser(req, _res, next) {
     const testUserId =
       process.env.NODE_ENV === "test" ? req.header("x-test-user-id") : null;
     const userId = req.session?.userId || testUserId;
-    req.currentUser = userId ? await User.findById(userId) : null;
+    req.currentUser = userId
+      ? await User.findById(userId).select(SESSION_USER_FIELDS)
+      : null;
     next();
   } catch (error) {
     next(error);

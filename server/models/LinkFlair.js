@@ -13,4 +13,6 @@ const linkFlairSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+linkFlairSchema.index({ content: "text" }, { name: "flair_discovery" });
+
 export default mongoose.model("LinkFlair", linkFlairSchema);

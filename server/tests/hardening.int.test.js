@@ -25,6 +25,16 @@ async function withDatabase(t) {
   });
 }
 
+test("health check confirms the database-backed API is ready", async (t) => {
+  await withDatabase(t);
+  const response = await supertest(createApp({ useSessionStore: false }))
+    .get("/api/health");
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body, { ok: true });
+  assert.equal(response.headers["cache-control"], "private, no-store");
+});
+
 test("post creation commits a new flair and all ownership references together", async (t) => {
   await withDatabase(t);
   const user = await createTestUser();
@@ -90,6 +100,8 @@ test("post summary stays lightweight and malformed JSON returns a stable client 
 
   const summary = await supertest(app).get(`/api/posts/${post._id}/summary`);
   assert.equal(summary.status, 200);
+  assert.equal(summary.headers["cache-control"], "private, no-store");
+  assert.match(summary.headers["x-request-id"], /^[A-Za-z0-9._:-]+$/);
   assert.equal(summary.body.post.title, "Lightweight summary");
   assert.equal(Object.hasOwn(summary.body.post, "content"), false);
 
@@ -99,6 +111,7 @@ test("post summary stays lightweight and malformed JSON returns a stable client 
     .send('{"email":');
   assert.equal(malformed.status, 400);
   assert.equal(malformed.body.error, "Request body must contain valid JSON.");
+  assert.equal(malformed.body.requestId, malformed.headers["x-request-id"]);
 });
 
 test("comment cascade follows parentComment even when cached reply arrays are stale", async (t) => {

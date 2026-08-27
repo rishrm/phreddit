@@ -3,7 +3,11 @@ import Comment from "../models/Comment.js";
 import Community from "../models/Community.js";
 import Post from "../models/Post.js";
 import User from "../models/User.js";
-import { requireAdmin, requireLogin } from "../middleware/auth.js";
+import {
+  requireAdmin,
+  requireLogin,
+  SESSION_USER_FIELDS
+} from "../middleware/auth.js";
 import { deleteUserCascade } from "../utils/cascadeDelete.js";
 import { attachPostStats } from "../utils/postStats.js";
 import { presentVotable } from "../utils/serialize.js";
@@ -74,7 +78,7 @@ router.post("/me/saved-posts/:postId", requireLogin, async (req, res, next) => {
       req.currentUser._id,
       { $addToSet: { savedPosts: post._id } },
       { new: true }
-    );
+    ).select(SESSION_USER_FIELDS);
 
     return res.json({
       message: "Post saved.",
@@ -91,7 +95,7 @@ router.delete("/me/saved-posts/:postId", requireLogin, async (req, res, next) =>
       req.currentUser._id,
       { $pull: { savedPosts: req.params.postId } },
       { new: true }
-    );
+    ).select(SESSION_USER_FIELDS);
 
     return res.json({
       message: "Post removed from saved posts.",
@@ -126,18 +130,21 @@ router.get("/:id/profile-content", requireLogin, async (req, res, next) => {
     const posts = await Post.find({
       postedBy: user._id
     })
+      .select("title content community createdAt updatedAt votedBy")
       .populate("community", "name")
       .sort({ createdAt: -1 });
 
     const comments = await Comment.find({
       commentedBy: user._id
     })
+      .select("content post parentComment createdAt updatedAt upvotes downvotes votedBy")
       .populate("post", "title")
       .sort({ createdAt: -1 });
 
     const savedPosts = await Post.find({
       _id: { $in: user.savedPosts || [] }
     })
+      .select("title community postedBy linkFlair createdAt views upvotes downvotes votedBy")
       .populate("postedBy", "displayName")
       .populate("community", "name")
       .populate("linkFlair", "content")
