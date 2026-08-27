@@ -13,9 +13,14 @@ function captureCsrfToken(data) {
 }
 
 function requestError(response, data) {
-  const error = new Error(data.error || data.errors?.join(" ") || "Request failed.");
+  const message = data.error || data.errors?.join(" ") || "Request failed.";
+  const reference = response.status >= 500 && data.requestId
+    ? ` Reference: ${data.requestId}`
+    : "";
+  const error = new Error(`${message}${reference}`);
   error.status = response.status;
   error.code = data.code;
+  error.requestId = data.requestId;
   return error;
 }
 
@@ -146,6 +151,10 @@ export const api = {
     return request(`/posts${suffix}`, options);
   },
   getLinkFlairs: (options = {}) => request("/linkflairs", options),
+  discover: (query, options = {}) => {
+    const params = new URLSearchParams({ q: query });
+    return request(`/search?${params.toString()}`, options);
+  },
   createLinkFlair: (body) =>
     request("/linkflairs", {
       method: "POST",

@@ -6,6 +6,20 @@ import EditableItemRow from "../components/EditableItemRow.jsx";
 import RichText from "../components/RichText.jsx";
 import { formatDate } from "../utils/format.jsx";
 
+const REPORT_FILTERS = [
+  { id: "pending", label: "Pending" },
+  { id: "dismissed", label: "Dismissed" },
+  { id: "content_removed", label: "Removed" },
+  { id: "all", label: "All activity" }
+];
+
+const REPORT_STATUS_LABELS = {
+  pending: "Pending",
+  processing: "In progress",
+  dismissed: "Dismissed",
+  content_removed: "Content removed"
+};
+
 export default function Profile() {
   const { user, showMessage, refreshCurrentUser, refreshToken } = useOutletContext();
   const { userId: viewedUserId } = useParams();
@@ -14,6 +28,9 @@ export default function Profile() {
   const [profile, setProfile] = useState(null);
   const [users, setUsers] = useState([]);
   const [reports, setReports] = useState([]);
+  const [reportStatus, setReportStatus] = useState("pending");
+  const [reportsLoading, setReportsLoading] = useState(false);
+  const [reportsError, setReportsError] = useState("");
   const [activeTab, setActiveTab] = useState("posts");
   const [editing, setEditing] = useState(null);
   const [confirm, setConfirm] = useState(null);
@@ -59,14 +76,29 @@ export default function Profile() {
   useEffect(() => {
     if (!user?.isAdmin || isViewingOther) return;
     const controller = new AbortController();
+    setReports([]);
+    setReportsLoading(true);
+    setReportsError("");
     api
-      .listReports({}, { signal: controller.signal })
+      .listReports({ status: reportStatus }, { signal: controller.signal })
       .then((data) => setReports(data.reports || []))
       .catch((error) => {
-        if (error.name !== "AbortError") showMessage(error.message, "error");
+        if (error.name === "AbortError") return;
+        setReportsError(error.message);
+        showMessage(error.message, "error");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setReportsLoading(false);
       });
     return () => controller.abort();
-  }, [user, isViewingOther, showMessage, refreshToken, localRefresh]);
+  }, [
+    user,
+    isViewingOther,
+    reportStatus,
+    showMessage,
+    refreshToken,
+    localRefresh
+  ]);
 
   function refresh() {
     setLocalRefresh((n) => n + 1);
@@ -141,7 +173,6 @@ export default function Profile() {
           action,
           ...(note ? { note } : {})
         });
-        setReports(data.reports || []);
         showMessage(data.message, "success");
         refresh();
         refreshCurrentUser();
@@ -420,8 +451,31 @@ export default function Profile() {
           role="tabpanel"
           aria-labelledby="profile-tab-moderation"
         >
-          {reports.length === 0 ? (
-            <p>No pending reports.</p>
+          <div className="moderation-toolbar">
+            <span className="muted">Review queue and resolution history</span>
+            <div className="action-row" role="group" aria-label="Filter moderation activity">
+              {REPORT_FILTERS.map((filter) => (
+                <button
+                  key={filter.id}
+                  type="button"
+                  aria-pressed={reportStatus === filter.id}
+                  className={reportStatus === filter.id ? "active" : ""}
+                  onClick={() => setReportStatus(filter.id)}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {reportsError ? (
+            <p className="error-state" role="alert">
+              {reportsError}{" "}
+              <button type="button" onClick={refresh}>Retry</button>
+            </p>
+          ) : reportsLoading ? (
+            <p className="muted" role="status">Loading moderation activity...</p>
+          ) : reports.length === 0 ? (
+            <p>No moderation activity matches this filter.</p>
           ) : (
             reports.map((report) => {
               const snapshot = report.contentSnapshot || {};
@@ -429,10 +483,14 @@ export default function Profile() {
               const communityName = report.targetPost?.community?.name || snapshot.communityName;
               const content = report.targetPost?.content || snapshot.content;
               const processing = report.status === "processing";
+              const resolved = ["dismissed", "content_removed"].includes(report.status);
               return (
                 <div key={report._id} className="row-card moderation-card">
                   <div className="row-card-text">
                     <span className="row-card-title">{title}</span>
+                    <span className={`moderation-status moderation-status--${report.status}`}>
+                      {REPORT_STATUS_LABELS[report.status] || report.status}
+                    </span>
                     <span className="row-card-subtitle">
                       {report.reason} report from {report.reportedBy?.displayName || "Unknown user"}
                       {communityName ? ` in ${communityName}` : ""}
@@ -440,24 +498,41 @@ export default function Profile() {
                     {content && <RichText text={content.slice(0, 500)} />}
                     {report.details && <span className="row-card-subtitle">{report.details}</span>}
                     {processing && <span className="row-card-subtitle">Resolution in progress...</span>}
+                    {resolved && (
+                      <span className="row-card-subtitle">
+                        Resolved {formatDate(report.resolvedAt)}
+                        {report.resolvedBy?.displayName
+                          ? ` by ${report.resolvedBy.displayName}`
+                          : ""}
+                      </span>
+                    )}
+                    {report.resolutionNote && (
+                      <span className="row-card-subtitle">
+                        Resolution note: {report.resolutionNote}
+                      </span>
+                    )}
                   </div>
                   <div className="row-card-actions">
                     {report.targetPost && (
                       <button onClick={() => navigate(`/posts/${report.targetPost._id}`)}>Open</button>
                     )}
-                    <button
-                      disabled={processing}
-                      onClick={() => requestResolveReport(report, "dismiss")}
-                    >
-                      Dismiss
-                    </button>
-                    <button
-                      className="danger"
-                      disabled={processing}
-                      onClick={() => requestResolveReport(report, "delete_post")}
-                    >
-                      Delete post
-                    </button>
+                    {!resolved && (
+                      <>
+                        <button
+                          disabled={processing}
+                          onClick={() => requestResolveReport(report, "dismiss")}
+                        >
+                          Dismiss
+                        </button>
+                        <button
+                          className="danger"
+                          disabled={processing}
+                          onClick={() => requestResolveReport(report, "delete_post")}
+                        >
+                          Delete post
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               );

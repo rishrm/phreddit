@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
   Navigate,
   Outlet,
@@ -11,19 +11,28 @@ import { api } from "./api/client.js";
 import AppShell from "./components/AppShell.jsx";
 import Banner from "./components/Banner.jsx";
 import BootstrapScreen from "./components/BootstrapScreen.jsx";
-import Welcome from "./pages/Welcome.jsx";
-import Register from "./pages/Register.jsx";
-import Login from "./pages/Login.jsx";
-import Home from "./pages/Home.jsx";
-import Search from "./pages/Search.jsx";
-import CreateCommunity from "./pages/CreateCommunity.jsx";
-import CreatePost from "./pages/CreatePost.jsx";
-import CreateComment from "./pages/CreateComment.jsx";
-import Community from "./pages/Community.jsx";
-import Post from "./pages/Post.jsx";
-import Profile from "./pages/Profile.jsx";
-import UserProfile from "./pages/UserProfile.jsx";
-import NotFound from "./pages/NotFound.jsx";
+
+const Welcome = lazy(() => import("./pages/Welcome.jsx"));
+const Register = lazy(() => import("./pages/Register.jsx"));
+const Login = lazy(() => import("./pages/Login.jsx"));
+const Home = lazy(() => import("./pages/Home.jsx"));
+const Search = lazy(() => import("./pages/Search.jsx"));
+const CreateCommunity = lazy(() => import("./pages/CreateCommunity.jsx"));
+const CreatePost = lazy(() => import("./pages/CreatePost.jsx"));
+const CreateComment = lazy(() => import("./pages/CreateComment.jsx"));
+const Community = lazy(() => import("./pages/Community.jsx"));
+const Post = lazy(() => import("./pages/Post.jsx"));
+const Profile = lazy(() => import("./pages/Profile.jsx"));
+const UserProfile = lazy(() => import("./pages/UserProfile.jsx"));
+const NotFound = lazy(() => import("./pages/NotFound.jsx"));
+
+function RouteLoading() {
+  return (
+    <main className="card route-loading" aria-busy="true">
+      <p className="muted" role="status">Loading view...</p>
+    </main>
+  );
+}
 
 function Layout({
   user,
@@ -53,16 +62,18 @@ function Layout({
         onCreateCommunity={() => navigate("/communities/new")}
         onCreatePost={() => navigate("/posts/new")}
       >
-        <Outlet
-          context={{
-            user,
-            communities,
-            showMessage,
-            refreshCurrentUser,
-            refreshData,
-            refreshToken
-          }}
-        />
+        <Suspense fallback={<RouteLoading />}>
+          <Outlet
+            context={{
+              user,
+              communities,
+              showMessage,
+              refreshCurrentUser,
+              refreshData,
+              refreshToken
+            }}
+          />
+        </Suspense>
       </AppShell>
     </>
   );
@@ -229,7 +240,8 @@ export default function App() {
         </p>
       )}
 
-      <Routes>
+      <Suspense fallback={<RouteLoading />}>
+        <Routes>
         <Route
           path="/"
           element={user ? <Navigate to="/home" replace /> : <Welcome />}
@@ -279,7 +291,8 @@ export default function App() {
           <Route path="/profile/:userId" element={<Profile />} />
           <Route path="*" element={<NotFound />} />
         </Route>
-      </Routes>
+        </Routes>
+      </Suspense>
     </>
   );
 }

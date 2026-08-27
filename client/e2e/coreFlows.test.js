@@ -5,10 +5,10 @@ const navigationTimeout = 15000;
 
 test.beforeEach(async ({ request }) => resetE2eDatabase(request));
 
-async function createCommunity(page, communityName) {
+async function createCommunity(page, communityName, description = "Community created by a Playwright smoke test.") {
   await page.getByRole("button", { name: /create community/i }).click();
   await page.locator("#communityName").fill(communityName);
-  await page.locator("#communityDescription").fill("Community created by a Playwright smoke test.");
+  await page.locator("#communityDescription").fill(description);
   await page.getByRole("button", { name: /submit/i }).click();
 
   // Creating a community lands on the new community page.
@@ -39,11 +39,11 @@ test("core flows: content creation, self-vote gate, sorting, profile, and two-us
   const stamp = Date.now();
   const password = "SafePassword123!";
   const authorEmail = `core${stamp}@example.com`;
-  const authorName = `coreuser${stamp}`;
+  const authorName = `signal${String(stamp).slice(-6)}`;
   const voterEmail = `voter${stamp}@example.com`;
   const voterName = `voter${stamp}`;
   const communityName = `corecommunity${stamp}`;
-  const flair = `Question ${stamp}`;
+  const flair = `${authorName} topic`;
   const activeTitle = `Active Thread ${stamp}`;
   const quietTitle = `Quiet Thread ${stamp}`;
   const editedTitle = `Edited Thread ${stamp}`;
@@ -51,16 +51,32 @@ test("core flows: content creation, self-vote gate, sorting, profile, and two-us
 
   // --- User A: author ---
   await registerAndLogin(page, { email: authorEmail, displayName: authorName, password });
-  await createCommunity(page, communityName);
+  await createCommunity(
+    page,
+    communityName,
+    `A community for ${authorName} discovery and Playwright smoke tests.`
+  );
   await createPost(page, {
     title: activeTitle,
-    content: "This post will receive comments and votes.",
+    content: `This ${authorName} post will receive comments and votes.`,
     flair
   });
   await createPost(page, {
     title: quietTitle,
     content: "This post should stay below active threads."
   });
+
+  // Unified discovery returns posts/comments plus safe community, user, and
+  // flair matches from one search interaction.
+  const search = page.getByRole("searchbox", { name: /search phreddit/i });
+  await search.fill(authorName);
+  await search.press("Enter");
+  await expect(page).toHaveURL(new RegExp(`/search\\?q=${authorName}`));
+  await expect(page.getByRole("link", { name: communityName })).toBeVisible();
+  await expect(page.getByRole("link", { name: authorName })).toBeVisible();
+  await expect(page.getByRole("button", { name: flair })).toBeVisible();
+  await expect(page.getByRole("link", { name: activeTitle })).toBeVisible();
+  await page.getByRole("button", { name: /^home$/i }).first().click();
 
   // Authors can focus the vote control and hear why it is unavailable.
   await page.getByRole("link", { name: activeTitle }).click();

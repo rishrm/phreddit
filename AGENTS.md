@@ -43,6 +43,9 @@ also `npm run test:e2e`, and update the specs in `client/e2e/` if flows moved.
 - Every mutation that changes what a post page shows (comments, votes, edits,
   deletes, moderation removals) must call `emitPostUpdated(postId)` from
   `server/realtime.js`. It is a no-op in tests by design.
+- View increments deliberately do not emit realtime invalidations: the caller
+  already receives the authoritative count, and broadcasts would make every
+  viewer refetch for analytics-only changes.
 - `GET /api/posts/:id` fetches comments FLAT in one query and builds the tree
   iteratively in memory. Do not reintroduce nested `populate` (it
   depth-truncates). Preserve the 5,000-comment response guard and
@@ -60,20 +63,28 @@ also `npm run test:e2e`, and update the specs in `client/e2e/` if flows moved.
   before request parsing, and `csrfProtection` mounted after session
   middleware. Unsafe production requests require both a trusted `Origin` and
   the session-bound token from `ensureCsrfToken`; never weaken either boundary.
+- Keep `requestContext` ahead of CORS/rate limiting. Every `/api` response must
+  remain `private, no-store` and carry a validated `X-Request-ID`.
 - Mongo gotchas already handled in `server/routes/postRoutes.js` — keep them:
   `$text` cannot live inside `$or` (resolve matching ids first), and
   aggregation pipelines do NOT auto-cast string ids (use `toObjectId()`).
 - Multi-document mutations use `runAtomic()`. Operations inside one MongoDB
   transaction/session must be awaited serially; do not use `Promise.all` with
   the same session.
-- `server/init.js`, `bench/seed.js`, and `admin:promote` are intentionally
-  guarded destructive/privilege scripts. Do not weaken their confirmation
-  environment variables.
+- `server/init.js`, `bench/seed.js`, and `admin:promote` are guarded
+  destructive/privilege scripts. `init.js` accepts the assignment's third
+  password argument only for the default local `phreddit` database; remote or
+  custom databases still require environment secrets and exact confirmation.
+- Cross-entity discovery lives at `GET /api/search` and returns only safe,
+  bounded projections. Preserve the text indexes on Community, User, and
+  LinkFlair and never expose user email or community member IDs there.
 
 **Client**
 - Navigation is react-router URLs (`/posts/:id`, `/communities/:id`,
   `/users/:id`, `/search?q=`). No view-state switching; new pages get routes
   in `src/App.jsx` and read shared state via `useOutletContext()`.
+- Routed pages stay lazy-loaded, and the root remains wrapped in
+  `AppErrorBoundary`; do not pull page modules back into the initial bundle.
 - User-authored text renders ONLY through `src/components/RichText.jsx`
   (marked + DOMPurify). Never use `dangerouslySetInnerHTML` elsewhere.
 - Notifications: `showMessage(text, tone)` with tone `"info" | "success" |

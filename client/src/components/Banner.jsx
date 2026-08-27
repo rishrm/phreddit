@@ -56,25 +56,30 @@ export default function Banner({ user, onLogout }) {
           type="search"
           className="banner-search"
           aria-label="Search Phreddit"
-          placeholder="Search posts, comments, and communities"
+          placeholder="Search posts, communities, people, and flairs"
           maxLength={200}
           value={searchValue}
           onChange={(event) => setSearchValue(event.target.value)}
           onKeyDown={handleSearchKey}
         />
       </div>
-      {user && (
-        <button className="primary nav-button" onClick={() => navigate("/posts/new")}>
-          <Plus size={17} aria-hidden="true" />
-          <span>Create Post</span>
-        </button>
-      )}
-      {user && (
-        <button className="nav-button profile-button" onClick={() => navigate("/profile")}>
-          <UserRound size={17} aria-hidden="true" />
-          <span>{user.displayName}</span>
-        </button>
-      )}
+      <button
+        className="primary nav-button banner-create-post"
+        disabled={!user}
+        title={!user ? "Log in to create a post" : undefined}
+        onClick={() => navigate("/posts/new")}
+      >
+        <Plus size={17} aria-hidden="true" />
+        <span>Create Post</span>
+      </button>
+      <button
+        className={`nav-button profile-button${user ? "" : " guest-profile"}`}
+        disabled={!user}
+        onClick={() => navigate("/profile")}
+      >
+        <UserRound size={17} aria-hidden="true" />
+        <span>{user?.displayName || "Guest"}</span>
+      </button>
       {!user && (
         <button className="nav-button" onClick={() => navigate("/login")}>
           <LogIn size={17} aria-hidden="true" />
@@ -82,7 +87,7 @@ export default function Banner({ user, onLogout }) {
         </button>
       )}
       {!user && (
-        <button className="primary nav-button" onClick={() => navigate("/register")}>
+        <button className="primary nav-button banner-register" onClick={() => navigate("/register")}>
           <UserRoundPlus size={17} aria-hidden="true" />
           <span>Register</span>
         </button>
