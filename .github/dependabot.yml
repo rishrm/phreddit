@@ -17,13 +17,28 @@ updates:
     directory: /server
     schedule:
       interval: weekly
+    # connect-mongo is intentionally absent: Dependabot's npm updater crashes
+    # while parsing malformed `engines` metadata from its historical 0.2.0
+    # release. CI npm-audit and GitHub security alerts still cover it.
+    allow:
+      - dependency-name: bcrypt
+      - dependency-name: cors
+      - dependency-name: dotenv
+      - dependency-name: express
+      - dependency-name: express-rate-limit
+      - dependency-name: express-session
+      - dependency-name: helmet
+      - dependency-name: mongoose
+      - dependency-name: socket.io
+      - dependency-name: "@eslint/js"
+      - dependency-name: eslint
+      - dependency-name: globals
+      - dependency-name: supertest
     groups:
       server-dependencies:
         patterns: ["*"]
         update-types: ["minor", "patch"]
     ignore:
-      - dependency-name: connect-mongo
-        update-types: ["version-update:semver-major"]
       - dependency-name: dotenv
         update-types: ["version-update:semver-major"]
       - dependency-name: express
