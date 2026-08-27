@@ -50,6 +50,11 @@ also `npm run test:e2e`, and update the specs in `client/e2e/` if flows moved.
   iteratively in memory. Do not reintroduce nested `populate` (it
   depth-truncates). Preserve the 5,000-comment response guard and
   `commentsTruncated` signal.
+- Active sorting relies on `Post.commentCount` and `Post.latestCommentAt`.
+  Comment creation must update them in the same transaction; comment-tree
+  deletion must call `syncPostActivity()`. Keep the bounded startup backfill
+  for documents created before these fields existed. Do not reintroduce a
+  per-post `$lookup` into the Active listing pipeline.
 - View counts increment only via `POST /api/posts/:id/view`. GETs stay
   idempotent.
 - The `x-test-user-id` header is honored ONLY when `NODE_ENV === "test"`
