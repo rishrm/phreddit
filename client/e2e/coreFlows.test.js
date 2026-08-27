@@ -72,9 +72,10 @@ test("core flows: content creation, self-vote gate, sorting, profile, and two-us
   await search.fill(authorName);
   await search.press("Enter");
   await expect(page).toHaveURL(new RegExp(`/search\\?q=${authorName}`));
-  await expect(page.getByRole("link", { name: communityName })).toBeVisible();
-  await expect(page.getByRole("link", { name: authorName })).toBeVisible();
-  await expect(page.getByRole("button", { name: flair })).toBeVisible();
+  const discovery = page.locator(".search-discovery");
+  await expect(discovery.getByRole("link", { name: communityName })).toBeVisible();
+  await expect(discovery.getByRole("link", { name: authorName })).toBeVisible();
+  await expect(discovery.getByRole("button", { name: flair })).toBeVisible();
   await expect(page.getByRole("link", { name: activeTitle })).toBeVisible();
   await page.getByRole("button", { name: /^home$/i }).first().click();
 
