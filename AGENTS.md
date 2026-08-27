@@ -80,6 +80,10 @@ also `npm run test:e2e`, and update the specs in `client/e2e/` if flows moved.
   destructive/privilege scripts. `init.js` accepts the assignment's third
   password argument only for the default local `phreddit` database; remote or
   custom databases still require environment secrets and exact confirmation.
+- Administrator password recovery is CLI-only. Keep it restricted to an
+  existing `isAdmin` account, require exact email confirmation, accept the new
+  password only through `ADMIN_NEW_PASSWORD`, and invalidate stored sessions.
+  Never turn it into an unauthenticated HTTP endpoint.
 - Cross-entity discovery lives at `GET /api/search` and returns only safe,
   bounded projections. Preserve the text indexes on Community, User, and
   LinkFlair and never expose user email or community member IDs there.

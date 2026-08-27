@@ -11,6 +11,7 @@
     "dev": "node --watch server.js",
     "init": "node init.js",
     "admin:promote": "node scripts/promoteAdmin.js",
+    "admin:reset-password": "node scripts/resetAdminPassword.js",
     "lint": "eslint .",
     "test:unit": "NODE_ENV=test node --test \"./tests/*.unit.test.js\"",
     "test:int": "NODE_ENV=test node --test --test-concurrency=1 \"./tests/*.int.test.js\"",
