@@ -33,6 +33,7 @@
 - Community/comment/flair length limits, Markdown link rules, and link-flair existence are enforced by the API.
 - Replica-set deployments use MongoDB transactions for multi-document writes; CI forces this path while local standalone MongoDB retains an idempotent fallback.
 - Benchmark tooling: guarded `bench/seed.js` plus a dependency-free concurrent HTTP runner with req/s and percentile output.
+- Active-sort performance: materialized comment count/latest activity is maintained transactionally, recomputed after comment-tree deletion, and backfilled for legacy posts. A compound ordering index replaced correlated per-post comment lookups; the documented 2,000-post local profile improved from 40 to 947-1,000 req/s while reducing p99 by at least 94%.
 
 ## Frontend
 - **react-router-dom migration:** real URLs and deep links for home, search (`?q=`), communities, posts, public users, and profile; 404 page; redirect-aware auth pages.

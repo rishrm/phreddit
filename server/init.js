@@ -70,11 +70,16 @@ async function createComment({ content, post, commentedBy, parentComment = null 
     await Comment.findByIdAndUpdate(parentComment._id, {
       $addToSet: { replies: comment._id }
     });
-  } else {
-    await Post.findByIdAndUpdate(post._id, {
-      $addToSet: { comments: comment._id }
-    });
   }
+
+  const postUpdate = {
+    $inc: { commentCount: 1 },
+    $max: { latestCommentAt: comment.createdAt }
+  };
+  if (!parentComment) {
+    postUpdate.$addToSet = { comments: comment._id };
+  }
+  await Post.findByIdAndUpdate(post._id, postUpdate);
 
   await User.findByIdAndUpdate(commentedBy._id, {
     $addToSet: { createdComments: comment._id }

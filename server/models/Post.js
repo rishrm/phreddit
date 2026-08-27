@@ -55,6 +55,15 @@ const postSchema = new mongoose.Schema(
         ref: "Comment"
       }
     ],
+    commentCount: {
+      type: Number,
+      min: 0,
+      default: 0
+    },
+    latestCommentAt: {
+      type: Date,
+      default: null
+    },
     upvotes: {
       type: Number,
       default: 0
@@ -73,6 +82,7 @@ postSchema.index({ community: 1, createdAt: -1 });
 postSchema.index({ createdAt: -1, _id: -1 });
 postSchema.index({ linkFlair: 1, createdAt: -1 });
 postSchema.index({ postedBy: 1, createdAt: -1 });
+postSchema.index({ latestCommentAt: -1, createdAt: -1, _id: -1 });
 postSchema.index({ "votedBy.user": 1 });
 
 export default mongoose.model("Post", postSchema);

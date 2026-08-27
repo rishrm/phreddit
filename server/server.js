@@ -25,6 +25,7 @@ import {
 import { setIo } from "./realtime.js";
 import { ensureConfiguredAdmin } from "./utils/adminBootstrap.js";
 import { databaseHealth } from "./utils/health.js";
+import { backfillMissingPostActivity } from "./utils/postActivity.js";
 import Comment from "./models/Comment.js";
 import Community from "./models/Community.js";
 import LinkFlair from "./models/LinkFlair.js";
@@ -206,6 +207,10 @@ export function createApp({ useSessionStore = true } = {}) {
 
 export async function startServer() {
   await mongoose.connect(MONGO_URI);
+  const backfilledPosts = await backfillMissingPostActivity();
+  if (backfilledPosts > 0) {
+    console.log(`Backfilled comment activity for ${backfilledPosts} posts.`);
+  }
   const adminBootstrap = await ensureConfiguredAdmin();
   if (adminBootstrap.configured) {
     console.log("Verified the configured administrator account.");

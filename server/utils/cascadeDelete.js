@@ -5,6 +5,7 @@ import Post from "../models/Post.js";
 import Report from "../models/Report.js";
 import User from "../models/User.js";
 import { emitPostUpdated } from "../realtime.js";
+import { syncPostActivity } from "./postActivity.js";
 import { runAtomic, sessionOptions, withSession } from "./transactions.js";
 
 function uniqueObjectIds(values) {
@@ -45,7 +46,11 @@ async function collectCommentTreeIds(rootIds, session) {
   return [...collected.values()];
 }
 
-async function deleteCommentsByIds(commentIds, session) {
+async function deleteCommentsByIds(
+  commentIds,
+  session,
+  { syncActivity = true } = {}
+) {
   const ids = uniqueObjectIds(commentIds);
   if (ids.length === 0) return [];
 
@@ -76,6 +81,9 @@ async function deleteCommentsByIds(commentIds, session) {
   );
 
   await Comment.deleteMany({ _id: { $in: existingIds } }, options);
+  if (syncActivity) {
+    await syncPostActivity(postIds, { session });
+  }
   return postIds;
 }
 
@@ -123,7 +131,9 @@ export async function deletePostsInSession(
     rootComments.map((comment) => comment._id),
     session
   );
-  const touchedPostIds = await deleteCommentsByIds(allCommentIds, session);
+  const touchedPostIds = await deleteCommentsByIds(allCommentIds, session, {
+    syncActivity: false
+  });
   const options = sessionOptions(session);
 
   await Community.updateMany(

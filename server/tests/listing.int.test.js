@@ -4,6 +4,7 @@ import supertest from "supertest";
 import Comment from "../models/Comment.js";
 import Post from "../models/Post.js";
 import { createApp } from "../server.js";
+import { syncPostActivity } from "../utils/postActivity.js";
 import {
   clearTestDb,
   connectTestDb,
@@ -73,6 +74,7 @@ test("post listings paginate, sort server-side, and search via text indexes", as
       { $set: { createdAt: new Date("2026-01-01T00:00:00.000Z") } }
     )
   ]);
+  await syncPostActivity([first._id, third._id]);
 
   // Pagination: newest-first, two pages.
   const pageOne = await supertest(app).get("/api/posts").query({ limit: 2, page: 1 });

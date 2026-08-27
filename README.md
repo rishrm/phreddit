@@ -21,7 +21,7 @@ Visitors can browse as a guest or register a new account.
 - Guest browsing plus registration, login, logout, and persisted sessions
 - Client-side routing with real URLs and deep links (`/posts/:id`, `/communities/:id`, `/users/:id`, `/search?q=...`)
 - Live post pages: comments, votes, and edits from other users appear in real time over Socket.IO
-- Server-side pagination and sorting (Newest, Oldest, Active) with a Load More UI
+- Server-side pagination and sorting (Newest, Oldest, Active) with indexed, materialized comment activity and a Load More UI
 - Unified discovery across posts, comments, communities, public users, and link flairs using weighted MongoDB text indexes
 - Toggleable voting: vote, unvote, or switch votes with atomic database updates; no self-voting; reputation deltas reverse correctly
 - Arbitrary-depth threaded comments assembled from one indexed query (with a 5,000-comment response guard), plus Newest/Top sorting
@@ -160,10 +160,10 @@ Server extras: `npm --prefix server run admin:promote` (explicit administrator p
 |---|---|---|---|
 | Server unit (31 node:test tests) | `npm --prefix server run test:unit` | No | lint-and-unit |
 | Client unit (33 Vitest + RTL tests) | `npm --prefix client run test:unit` | No | lint-and-unit |
-| Server integration (29 supertest tests, disposable DB per data suite) | `npm run test:int` | Yes | integration |
+| Server integration (31 supertest tests, disposable DB per data suite) | `npm run test:int` | Yes | integration |
 | End-to-end (4 Playwright browser flows) | `npm run test:e2e` | Yes | e2e |
 
-The current matrix contains 97 automated tests: 31 server unit, 29 server integration, 33 client unit, and 4 Playwright flows. Integration tests spin up Express in-process against throwaway databases and run in CI against a MongoDB replica set with transactions forced. Regression coverage includes session-bound CSRF enforcement, guest session avoidance, DB-aware health, cross-entity discovery privacy, multi-thread Active sorting, membership-aware pagination, private vote serialization, authoritative cascade deletion, moderation history/claim races, and vote/reputation lifecycles. Playwright runs with CSRF enforcement enabled and covers desktop creation/profile/voting/discovery, a two-browser realtime check, and mobile keyboard/overflow behavior.
+The current matrix contains 99 automated tests: 31 server unit, 31 server integration, 33 client unit, and 4 Playwright flows. Integration tests spin up Express in-process against throwaway databases and run in CI against a MongoDB replica set with transactions forced. Regression coverage includes session-bound CSRF enforcement, guest session avoidance, DB-aware health, cross-entity discovery privacy, materialized Active-sort metadata and legacy backfills, membership-aware pagination, private vote serialization, authoritative cascade deletion, moderation history/claim races, and vote/reputation lifecycles. Playwright runs with CSRF enforcement enabled and covers desktop creation/profile/voting/discovery, a two-browser realtime check, and mobile keyboard/overflow behavior.
 
 Contributing with an AI coding agent? Repo commands and invariants live in [AGENTS.md](AGENTS.md).
 
@@ -182,7 +182,7 @@ DISABLE_RATE_LIMIT=true npm --prefix server start
 npm --prefix server run bench
 ```
 
-Record the reported req/s and p97.5/p99 latency, and cite them with the machine/dataset used. Results depend on hardware; measure before quoting numbers.
+The recorded 2,000-post/6,000-comment local profile observed 947-1,000 successful req/s with 69.1-98.9 ms p99 for Active sort after replacing correlated per-post comment lookups with transactionally maintained activity metadata. The measured baseline was 40 req/s at 1,788.7 ms p99. See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for the full commands, environment, repeated results, query plan, and limitations. These are local endpoint measurements, not a claim about simultaneous production users.
 
 ## Deployment
 
@@ -210,7 +210,7 @@ The client and API deploy separately.
 - **Voting:** vote add/remove/switch are single conditional `findOneAndUpdate` operations, so concurrent requests cannot double-count. `votedBy` is never sent to clients; each response carries only the caller's own `userVote`.
 - **Comments:** fetched flat with one indexed query (`{ post: 1, createdAt: -1 }`) and assembled iteratively in memory, so nesting depth is not truncated by recursive populate. A 5,000-comment response cap prevents unbounded memory use and is surfaced to the UI.
 - **Discovery:** post/comment search resolves matching ids first because `$text` cannot appear inside `$or`; a separate bounded endpoint uses weighted text indexes to return safe community, public-user, and flair matches without exposing member lists or email addresses.
-- **Listings:** pagination and all three sorts are computed database-side; "Active" uses an aggregation with a comments `$lookup`. Page-number pagination is intentional at this scale; cursor pagination is the documented next step if feeds grow unbounded.
+- **Listings:** pagination and all three sorts are computed database-side. `commentCount` and `latestCommentAt` are maintained with comment writes, recomputed after comment-tree deletion, and backfilled in bounded startup batches for legacy documents. Active ordering therefore avoids correlated lookups and uses a compound index for guest feeds. Page-number pagination is intentional at this scale; cursor pagination is the documented next step if feeds grow unbounded.
 - **Delivery:** all API responses are `private, no-store` and carry a validated `X-Request-ID`; 500 responses surface that reference to the UI. Route-level code splitting reduced the measured initial production JavaScript from 357.3 kB (112.3 kB gzip) to 199.2 kB (65.7 kB gzip), with Markdown and heavier pages loaded on demand.
 - **Sessions:** stored in MongoDB via connect-mongo; hashes are excluded by default at the Mongoose schema boundary, session IDs regenerate on login, and missing-user login attempts perform the same bcrypt work as bad passwords. Guests do not allocate a session during read-only bootstrap; the client obtains a synchronizer token only before the first unsafe request and refreshes it once after expiration. Vercel proxies REST through same-origin `/api`, allowing `SameSite=Lax`; unsafe requests must also come from `CLIENT_ORIGIN`. Registration intentionally returns to Welcome before login. The `x-test-user-id` header is inert outside `NODE_ENV=test`.
 - **Transactions and cascade deletes:** supported replica sets use MongoDB transactions for votes, reputation, ownership references, memberships, moderation, and children-first cascade deletion. Standalone local MongoDB uses the same idempotent operations without a transaction; CI forces the replica-set path.
@@ -243,6 +243,7 @@ The release branch includes fixes found through adversarial review rather than h
 - Added layered request security after CodeQL review: global throttling, session-bound synchronizer tokens, strict unsafe-request origin checks, linear-time validators, and explicit database-query normalization.
 - Cut the initial JavaScript payload by 44% through route-level lazy loading, while adding a recoverable render boundary for failed chunks or unexpected component errors.
 - Built one discovery experience over separate indexed data contracts, preserving private user/community fields and keeping post pagination independent from lightweight entity matches.
+- Replaced Active sort's correlated per-post comment aggregation with transactionally materialized activity metadata and an indexed ordering path, improving the measured local profile from 40 to 947-1,000 req/s while cutting p99 by at least 94%.
 
 ## Assignment Contribution
 

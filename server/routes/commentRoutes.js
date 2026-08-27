@@ -57,16 +57,34 @@ router.post("/", requireLogin, async (req, res, next) => {
           )
         : Post.updateOne(
             { _id: post._id },
-            { $addToSet: { comments: comment._id } },
+            {
+              $addToSet: { comments: comment._id },
+              $inc: { commentCount: 1 },
+              $max: { latestCommentAt: comment.createdAt }
+            },
             sessionOptions(session)
           );
       const referenceUpdate = await parentUpdate;
+      const postActivityUpdate = parentComment
+        ? await Post.updateOne(
+            { _id: post._id },
+            {
+              $inc: { commentCount: 1 },
+              $max: { latestCommentAt: comment.createdAt }
+            },
+            sessionOptions(session)
+          )
+        : referenceUpdate;
       const userUpdate = await User.updateOne(
         { _id: req.currentUser._id },
         { $addToSet: { createdComments: comment._id } },
         sessionOptions(session)
       );
-      if (referenceUpdate.matchedCount !== 1 || userUpdate.matchedCount !== 1) {
+      if (
+        referenceUpdate.matchedCount !== 1 ||
+        postActivityUpdate.matchedCount !== 1 ||
+        userUpdate.matchedCount !== 1
+      ) {
         throw new Error("Comment references could not be updated.");
       }
       return { comment, postId: post._id };
