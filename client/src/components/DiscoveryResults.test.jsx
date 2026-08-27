@@ -15,7 +15,7 @@ describe("DiscoveryResults", () => {
               _id: "community-1",
               name: "webdev",
               description: "Frontend discussions",
-              memberCount: 12
+              memberCount: 1
             }],
             users: [{ _id: "user-1", displayName: "rish", reputation: 100 }],
             linkFlairs: [{ _id: "flair-1", content: "Showcase" }]
@@ -29,6 +29,7 @@ describe("DiscoveryResults", () => {
       .toBe("/communities/community-1");
     expect(screen.getByRole("link", { name: "rish" }).getAttribute("href"))
       .toBe("/users/user-1");
+    expect(screen.getByText("1 member")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Showcase" }));
     expect(onSelectFlair).toHaveBeenCalledWith("flair-1");
   });
@@ -42,4 +43,3 @@ describe("DiscoveryResults", () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 });
-
