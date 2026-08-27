@@ -152,18 +152,18 @@ Root convenience scripts:
 | `npm run test:e2e` | Playwright end-to-end tests (boots API + client; needs MongoDB) |
 | `npm run build` | Production client build |
 
-Server extras: `npm --prefix server run admin:promote` (explicit administrator promotion), `npm --prefix server run bench:seed` (seed a benchmark database), and `npm --prefix server run bench` (dependency-free HTTP load test).
+Server extras: `npm --prefix server run admin:promote` (explicit administrator promotion), `npm --prefix server run admin:reset-password` (guarded administrator recovery), `npm --prefix server run bench:seed` (seed a benchmark database), and `npm --prefix server run bench` (dependency-free HTTP load test).
 
 ## Testing
 
 | Suite | Command | Needs MongoDB | CI job |
 |---|---|---|---|
-| Server unit (31 node:test tests) | `npm --prefix server run test:unit` | No | lint-and-unit |
+| Server unit (32 node:test tests) | `npm --prefix server run test:unit` | No | lint-and-unit |
 | Client unit (33 Vitest + RTL tests) | `npm --prefix client run test:unit` | No | lint-and-unit |
-| Server integration (31 supertest tests, disposable DB per data suite) | `npm run test:int` | Yes | integration |
+| Server integration (33 supertest tests, disposable DB per data suite) | `npm run test:int` | Yes | integration |
 | End-to-end (4 Playwright browser flows) | `npm run test:e2e` | Yes | e2e |
 
-The current matrix contains 99 automated tests: 31 server unit, 31 server integration, 33 client unit, and 4 Playwright flows. Integration tests spin up Express in-process against throwaway databases and run in CI against a MongoDB replica set with transactions forced. Regression coverage includes session-bound CSRF enforcement, guest session avoidance, DB-aware health, cross-entity discovery privacy, materialized Active-sort metadata and legacy backfills, membership-aware pagination, private vote serialization, authoritative cascade deletion, moderation history/claim races, and vote/reputation lifecycles. Playwright runs with CSRF enforcement enabled and covers desktop creation/profile/voting/discovery, a two-browser realtime check, and mobile keyboard/overflow behavior.
+The current matrix contains 102 automated tests: 32 server unit, 33 server integration, 33 client unit, and 4 Playwright flows. Integration tests spin up Express in-process against throwaway databases and run in CI against a MongoDB replica set with transactions forced. Regression coverage includes session-bound CSRF enforcement, guest session avoidance, administrator recovery/session invalidation, DB-aware health, cross-entity discovery privacy, materialized Active-sort metadata and legacy backfills, membership-aware pagination, private vote serialization, authoritative cascade deletion, moderation history/claim races, and vote/reputation lifecycles. Playwright runs with CSRF enforcement enabled and covers desktop creation/profile/voting/discovery, a two-browser realtime check, and mobile keyboard/overflow behavior.
 
 Contributing with an AI coding agent? Repo commands and invariants live in [AGENTS.md](AGENTS.md).
 
@@ -197,6 +197,16 @@ The client and API deploy separately.
 2. Set `MONGO_URI` to the Atlas string and `CLIENT_ORIGIN` to your exact Vercel production URL. The blueprint sets HTTPS cookies, proxy trust, session lifetime, and the API rate limit. Unsafe production requests require both a session-bound CSRF token and a matching `Origin`.
 3. Verify `https://<api>.onrender.com/api/health` returns `{ "ok": true }`. Register the production owner through the app, then promote it explicitly with `MONGO_URI=<atlas-uri> ADMIN_EMAIL=<email> CONFIRM_ADMIN_PROMOTION=<email> npm --prefix server run admin:promote`. Set the same `ADMIN_EMAIL` in Render and redeploy; startup verifies it but never changes privileges.
 4. To replace an empty database with sample data, run the guarded seed command from Setup with `MONGO_URI` pointed at Atlas and `CONFIRM_DATABASE_RESET` set to the Atlas database name. It intentionally erases that database first.
+
+**Administrator password recovery:**
+
+This is an operator-only command, not a public password-reset endpoint. It only accepts an existing administrator, applies the same password rules as registration, rejects password reuse, and invalidates every stored session after success. Configure `MONGO_URI`, `ADMIN_EMAIL`, `CONFIRM_ADMIN_PASSWORD_RESET` (an exact copy of the email), and `ADMIN_NEW_PASSWORD` through a deployment secret store; then run:
+
+```bash
+npm --prefix server run admin:reset-password
+```
+
+On Render, add the two recovery-only values (`CONFIRM_ADMIN_PASSWORD_RESET` and `ADMIN_NEW_PASSWORD`) as temporary secret environment variables, run the command from the service shell, and remove both immediately afterward. Never put the URI or password in command arguments, source control, chat, or shell history.
 
 **Client — Vercel (free):**
 1. Import the repo into Vercel. `vercel.json` builds the client, preserves SPA deep links, and proxies `/api/*` to the Render API so browser sessions remain first-party and work in Safari.
