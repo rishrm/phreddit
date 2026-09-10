@@ -9,8 +9,12 @@ import { requireLogin } from "../middleware/auth.js";
 import { deletePostAndComments } from "../utils/cascadeDelete.js";
 import { canUserVote } from "../utils/voting.js";
 import { applyVote } from "../utils/voteService.js";
-import { attachPostStats } from "../utils/postStats.js";
 import { presentVotable } from "../utils/serialize.js";
+import {
+  createPostCursorContext,
+  decodePostCursor,
+  encodePostCursor
+} from "../utils/postCursor.js";
 import {
   POST_CONTENT_MAX_LENGTH,
   requireLength,
@@ -38,10 +42,32 @@ function positiveInteger(value, fallback) {
 }
 
 function parsePagination(query) {
-  const page = Math.min(positiveInteger(query.page, 1), MAX_PAGE);
+  const cursor = query.cursor === undefined ? null : query.cursor;
+  if (cursor !== null && (typeof cursor !== "string" || !cursor)) {
+    const error = new Error("The post cursor must be a non-empty string.");
+    error.status = 400;
+    error.code = "INVALID_POST_CURSOR";
+    error.exposeCode = true;
+    throw error;
+  }
+  const hasLegacyPage = query.page !== undefined && query.page !== "";
+  if (cursor && hasLegacyPage) {
+    const error = new Error("Use either cursor or page pagination, not both.");
+    error.status = 400;
+    throw error;
+  }
+
+  const page = hasLegacyPage
+    ? Math.min(positiveInteger(query.page, 1), MAX_PAGE)
+    : null;
   const requestedLimit = positiveInteger(query.limit, DEFAULT_PAGE_SIZE);
   const limit = Math.min(Math.max(1, requestedLimit), MAX_PAGE_SIZE);
-  return { page, limit, skip: (page - 1) * limit };
+  return {
+    cursor,
+    page,
+    limit,
+    skip: page ? (page - 1) * limit : 0
+  };
 }
 
 function toObjectId(value, fieldName) {
@@ -91,6 +117,7 @@ async function buildListFilter(query) {
         }
       },
       { $group: { _id: "$postId" } },
+      { $sort: { _id: -1 } },
       { $limit: MAX_SEARCH_MATCHES + 1 }
     ]);
     searchTruncated = matches.length > MAX_SEARCH_MATCHES;
@@ -101,7 +128,7 @@ async function buildListFilter(query) {
     };
   }
 
-  return { filter, searchTruncated };
+  return { filter, search, searchTruncated };
 }
 
 function hydratePostsQuery(query) {
@@ -119,14 +146,93 @@ function joinedCommunityIds(currentUser) {
 }
 
 function joinedRankStage(joinedIds) {
-  if (joinedIds.length === 0) {
-    return { $addFields: { joinedRank: 0 } };
-  }
   return {
     $addFields: {
       joinedRank: { $cond: [{ $in: ["$community", joinedIds] }, 1, 0] }
     }
   };
+}
+
+function listingCursorContext({ sort, filter, search, currentUserId, joinedIds }) {
+  return createPostCursorContext({
+    sort,
+    community: filter.community,
+    linkFlair: filter.linkFlair,
+    search,
+    viewerId: joinedIds.length > 0 ? currentUserId : null,
+    joinedCommunityIds: joinedIds
+  });
+}
+
+function cursorValues(cursor) {
+  if (!cursor) return null;
+  return {
+    ...cursor,
+    objectId: new mongoose.Types.ObjectId(cursor.id)
+  };
+}
+
+function standardCursorStage(cursor, direction, hasJoinedPriority) {
+  const comparison = direction === 1 ? "$gt" : "$lt";
+  const sameRank = hasJoinedPriority ? { joinedRank: cursor.joinedRank } : {};
+  const clauses = [];
+
+  if (hasJoinedPriority && cursor.joinedRank === 1) {
+    clauses.push({ joinedRank: { $lt: cursor.joinedRank } });
+  }
+  clauses.push(
+    { ...sameRank, createdAt: { [comparison]: cursor.createdAt } },
+    {
+      ...sameRank,
+      createdAt: cursor.createdAt,
+      _id: { [comparison]: cursor.objectId }
+    }
+  );
+
+  return { $match: { $or: clauses } };
+}
+
+function activeCursorStage(cursor, hasJoinedPriority) {
+  const sameRank = hasJoinedPriority ? { joinedRank: cursor.joinedRank } : {};
+  const clauses = [];
+
+  if (hasJoinedPriority && cursor.joinedRank === 1) {
+    clauses.push({ joinedRank: { $lt: cursor.joinedRank } });
+  }
+
+  if (cursor.latestCommentAt) {
+    clauses.push(
+      { ...sameRank, latestCommentAt: { $lt: cursor.latestCommentAt } },
+      { ...sameRank, latestCommentAt: null },
+      {
+        ...sameRank,
+        latestCommentAt: cursor.latestCommentAt,
+        createdAt: { $lt: cursor.createdAt }
+      },
+      {
+        ...sameRank,
+        latestCommentAt: cursor.latestCommentAt,
+        createdAt: cursor.createdAt,
+        _id: { $lt: cursor.objectId }
+      }
+    );
+  } else {
+    clauses.push(
+      {
+        ...sameRank,
+        latestCommentAt: null,
+        createdAt: { $lt: cursor.createdAt }
+      },
+      {
+        ...sameRank,
+        latestCommentAt: null,
+        createdAt: cursor.createdAt,
+        _id: { $lt: cursor.objectId }
+      }
+    );
+  }
+
+  return { $match: { $or: clauses } };
 }
 
 async function hydrateOrderedPosts(ordered) {
@@ -136,16 +242,43 @@ async function hydrateOrderedPosts(ordered) {
   return orderedIds.map((id) => docsById.get(id)).filter(Boolean);
 }
 
-async function listStandardPosts(filter, skip, limit, direction, joinedIds) {
-  const ordered = await Post.aggregate([
+// Ordering selects only one window of keys before hydrating public post data.
+async function listPosts({
+  filter,
+  cursor,
+  skip,
+  limit,
+  sort,
+  joinedIds
+}) {
+  const direction = sort === "oldest" ? 1 : -1;
+  const hasJoinedPriority = joinedIds.length > 0;
+  const joinedStages = hasJoinedPriority ? [joinedRankStage(joinedIds)] : [];
+  const cursorStages = cursor
+    ? [sort === "active"
+      ? activeCursorStage(cursor, hasJoinedPriority)
+      : standardCursorStage(cursor, direction, hasJoinedPriority)]
+    : [];
+  const skipStages = skip > 0 ? [{ $skip: skip }] : [];
+  const ordering = {
+    ...(hasJoinedPriority ? { joinedRank: -1 } : {}),
+    ...(sort === "active" ? { latestCommentAt: -1 } : {}),
+    createdAt: direction,
+    _id: direction
+  };
+  const orderedWindow = await Post.aggregate([
     { $match: filter },
-    joinedRankStage(joinedIds),
-    { $sort: { joinedRank: -1, createdAt: direction, _id: direction } },
-    { $skip: skip },
-    { $limit: limit },
-    { $project: { _id: 1 } }
+    ...joinedStages,
+    ...cursorStages,
+    { $sort: ordering },
+    ...skipStages,
+    { $limit: limit + 1 },
+    { $project: { _id: 1, createdAt: 1, joinedRank: 1, commentCount: 1, latestCommentAt: 1 } }
   ]);
-  return hydrateOrderedPosts(ordered);
+  const hasMore = orderedWindow.length > limit;
+  const ordered = orderedWindow.slice(0, limit);
+  const docs = await hydrateOrderedPosts(ordered);
+  return { docs, ordered, hasMore };
 }
 
 async function normalizeLinkFlair(value, session = null) {
@@ -159,74 +292,58 @@ async function normalizeLinkFlair(value, session = null) {
   return flairId;
 }
 
-// "Active" ranks posts with comment activity first (by latest comment or
-// reply), then quiet posts by creation date. Comment activity is maintained
-// transactionally on each post, avoiding a per-post comment lookup here.
-async function listActivePosts(filter, skip, limit, joinedIds) {
-  const joinedStages = joinedIds.length > 0
-    ? [joinedRankStage(joinedIds)]
-    : [];
-  const sort = joinedIds.length > 0
-    ? { joinedRank: -1, latestCommentAt: -1, createdAt: -1, _id: -1 }
-    : { latestCommentAt: -1, createdAt: -1, _id: -1 };
-  const ordered = await Post.aggregate([
-    { $match: filter },
-    ...joinedStages,
-    { $sort: sort },
-    { $skip: skip },
-    { $limit: limit },
-    { $project: { _id: 1, commentCount: 1, latestCommentAt: 1 } }
-  ]);
-
-  const orderedIds = ordered.map((item) => String(item._id));
-  const statsById = new Map(
-    ordered.map((item) => [
-      String(item._id),
-      { commentCount: item.commentCount, latestCommentAt: item.latestCommentAt || null }
-    ])
-  );
-
-  const docs = await hydrateOrderedPosts(ordered);
-  const docsById = new Map(docs.map((doc) => [String(doc._id), doc]));
-
-  return orderedIds
-    .map((id) => ({ doc: docsById.get(id), stats: statsById.get(id) }))
-    .filter((item) => item.doc);
-}
-
 router.get("/", async (req, res, next) => {
   try {
     const sort = SORTS.has(req.query.sort) ? req.query.sort : "newest";
-    const { page, limit, skip } = parsePagination(req.query);
-    const { filter, searchTruncated } = await buildListFilter(req.query);
+    const { cursor: encodedCursor, page, limit, skip } = parsePagination(req.query);
+    const { filter, search, searchTruncated } = await buildListFilter(req.query);
     const currentUserId = req.currentUser?._id || null;
-    const joinedIds = joinedCommunityIds(req.currentUser);
+    const joinedIds = filter.community
+      ? []
+      : joinedCommunityIds(req.currentUser);
+    const context = listingCursorContext({
+      sort,
+      filter,
+      search,
+      currentUserId,
+      joinedIds
+    });
+    const cursor = cursorValues(
+      encodedCursor ? decodePostCursor(encodedCursor, { context, sort }) : null
+    );
 
-    const total = await Post.countDocuments(filter);
+    const total = encodedCursor ? null : await Post.countDocuments(filter);
 
-    let posts;
-    if (sort === "active") {
-      const items = await listActivePosts(filter, skip, limit, joinedIds);
-      posts = items.map(({ doc, stats }) => ({
-        ...presentVotable(doc, currentUserId),
-        commentCount: stats?.commentCount ?? 0,
-        latestCommentAt: stats?.latestCommentAt ?? null
-      }));
-    } else {
-      const direction = sort === "oldest" ? 1 : -1;
-      const docs = await listStandardPosts(filter, skip, limit, direction, joinedIds);
-      posts = await attachPostStats(docs, currentUserId);
-    }
+    const { docs, ordered, hasMore } = await listPosts({
+      filter, cursor, skip, limit, sort, joinedIds
+    });
+    const statsById = new Map(ordered.map((item) => [String(item._id), item]));
+    const posts = docs.map((doc) => ({
+      ...presentVotable(doc, currentUserId),
+      commentCount: statsById.get(String(doc._id)).commentCount ?? 0,
+      latestCommentAt: statsById.get(String(doc._id)).latestCommentAt ?? null
+    }));
 
-    return res.json({
+    const cursorItem = hasMore ? ordered.at(-1) : null;
+    const nextCursor = cursorItem ? encodePostCursor({
+      context,
+      sort,
+      joinedRank: cursorItem.joinedRank ?? 0,
+      createdAt: cursorItem.createdAt,
+      latestCommentAt: cursorItem.latestCommentAt ?? null,
+      id: cursorItem._id
+    }) : null;
+    const response = {
       posts,
-      page,
       limit,
-      total,
-      hasMore: skip + posts.length < total,
+      hasMore,
+      nextCursor,
       sort,
       searchTruncated
-    });
+    };
+    if (total !== null) response.total = total;
+    if (page !== null) response.page = page;
+    return res.json(response);
   } catch (error) {
     next(error);
   }
