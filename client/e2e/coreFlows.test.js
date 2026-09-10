@@ -12,7 +12,7 @@ async function createCommunity(page, communityName, description = "Community cre
   await page.getByRole("button", { name: /submit/i }).click();
 
   // Creating a community lands on the new community page.
-  await expect(page).toHaveURL(/\/communities\//, { timeout: navigationTimeout });
+  await expect(page).toHaveURL(/\/communities\/[a-f0-9]{24}$/, { timeout: navigationTimeout });
   await expect(page.getByRole("heading", { name: communityName })).toBeVisible({
     timeout: navigationTimeout
   });
