@@ -113,6 +113,8 @@ also `npm run test:e2e`, and update the specs in `client/e2e/` if flows moved.
   Socket.IO uses `VITE_SOCKET_URL` because it connects directly to Render.
 - Unsafe API calls go through `src/api/client.js`, which obtains, attaches, and
   refreshes the session CSRF token. Do not bypass that wrapper.
+- Post form edits must use functional state updates so asynchronously loaded
+  defaults cannot be overwritten by an input event from the preceding render.
 
 ## Test-writing notes
 

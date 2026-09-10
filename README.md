@@ -159,11 +159,11 @@ Server extras: `npm --prefix server run admin:promote` (explicit administrator p
 | Suite | Command | Needs MongoDB | CI job |
 |---|---|---|---|
 | Server unit (36 node:test tests) | `npm --prefix server run test:unit` | No | lint-and-unit |
-| Client unit (39 Vitest + RTL tests) | `npm --prefix client run test:unit` | No | lint-and-unit |
+| Client unit (40 Vitest + RTL tests) | `npm --prefix client run test:unit` | No | lint-and-unit |
 | Server integration (36 supertest tests, disposable DB per data suite) | `npm run test:int` | Yes | integration |
 | End-to-end (5 Playwright browser flows) | `npm run test:e2e` | Yes | e2e |
 
-The current matrix contains 116 automated tests: 36 server unit, 36 server integration, 39 client unit, and 5 Playwright flows. Integration tests spin up Express in-process against throwaway databases and run in CI against a MongoDB replica set with transactions forced. Regression coverage includes session-bound CSRF enforcement, guest session avoidance, administrator recovery/session invalidation, DB-aware health, cross-entity discovery privacy, materialized Active-sort metadata and legacy backfills, context-bound cursor traversal under concurrent inserts, membership-aware ordering, private vote serialization, authoritative cascade deletion, moderation history/claim races, and vote/reputation lifecycles. Playwright runs with CSRF enforcement enabled and covers cursor-backed Load More during a concurrent insert, desktop creation/profile/voting/discovery, a two-browser realtime check, and mobile keyboard/overflow behavior.
+The current matrix contains 117 automated tests: 36 server unit, 36 server integration, 40 client unit, and 5 Playwright flows. Integration tests spin up Express in-process against throwaway databases and run in CI against a MongoDB replica set with transactions forced. Regression coverage includes session-bound CSRF enforcement, guest session avoidance, administrator recovery/session invalidation, DB-aware health, cross-entity discovery privacy, materialized Active-sort metadata and legacy backfills, context-bound cursor traversal under concurrent inserts, membership-aware ordering, concurrent form initialization/typing, private vote serialization, authoritative cascade deletion, moderation history/claim races, and vote/reputation lifecycles. Playwright runs with CSRF enforcement enabled and covers cursor-backed Load More during a concurrent insert, desktop creation/profile/voting/discovery, a two-browser realtime check, and mobile keyboard/overflow behavior.
 
 Contributing with an AI coding agent? Repo commands and invariants live in [AGENTS.md](AGENTS.md).
 

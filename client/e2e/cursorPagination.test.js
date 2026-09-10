@@ -30,8 +30,8 @@ test("Load more follows the opaque cursor without duplicates during an insert", 
   await page.locator("#communityName").fill(communityName);
   await page.locator("#communityDescription").fill("Cursor pagination browser coverage.");
   await page.getByRole("button", { name: /submit/i }).click();
-  await expect(page).toHaveURL(/\/communities\//);
-  const communityId = page.url().split("/communities/")[1];
+  await expect(page).toHaveURL(/\/communities\/[a-f0-9]{24}$/);
+  const communityId = new URL(page.url()).pathname.split("/").at(-1);
 
   const csrfResponse = await page.request.get(`${API_ORIGIN}/api/auth/csrf`);
   expect(csrfResponse.ok()).toBe(true);

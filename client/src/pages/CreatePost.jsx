@@ -65,6 +65,10 @@ export default function CreatePost() {
     );
   }
 
+  function updateField(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
   async function submit(event) {
     event.preventDefault();
 
@@ -122,7 +126,7 @@ export default function CreatePost() {
         <select
           id="postCommunity"
           value={form.community}
-          onChange={(event) => setForm({ ...form, community: event.target.value })}
+          onChange={(event) => updateField("community", event.target.value)}
           disabled={loadingOptions || communities.length === 0}
         >
           {communities.length === 0 && <option value="">No communities available</option>}
@@ -140,14 +144,14 @@ export default function CreatePost() {
           maxLength={100}
           required
           value={form.title}
-          onChange={(event) => setForm({ ...form, title: event.target.value })}
+          onChange={(event) => updateField("title", event.target.value)}
         />
 
         <label htmlFor="postFlair">Link flair (optional)</label>
         <select
           id="postFlair"
           value={form.linkFlair}
-          onChange={(event) => setForm({ ...form, linkFlair: event.target.value })}
+          onChange={(event) => updateField("linkFlair", event.target.value)}
         >
           <option value="">No flair</option>
           {flairs.map((flair) => (
@@ -163,7 +167,7 @@ export default function CreatePost() {
           placeholder="New flair text"
           maxLength={30}
           value={form.newFlair}
-          onChange={(event) => setForm({ ...form, newFlair: event.target.value })}
+          onChange={(event) => updateField("newFlair", event.target.value)}
         />
 
         <label htmlFor="postContent">Content* (Markdown supported)</label>
@@ -173,13 +177,13 @@ export default function CreatePost() {
           maxLength={20000}
           required
           value={form.content}
-          onChange={(event) => setForm({ ...form, content: event.target.value })}
+          onChange={(event) => updateField("content", event.target.value)}
         />
         <div className="action-row">
           <button
             className="primary"
             type="submit"
-            disabled={loadingOptions || communities.length === 0 || submitting}
+            disabled={loadingOptions || !form.community || submitting}
           >
             {submitting ? "Publishing..." : "Submit"}
           </button>

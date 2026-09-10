@@ -5,7 +5,8 @@
 - Bound cursors to sort, filters, search, viewer membership priority, and joined-community state; malformed or cross-listing cursors return a stable `400` contract.
 - Preserved joined-community-first ordering across cursor boundaries, stabilized traversal under concurrent inserts, and retained `page` only as a deprecated rolling-deploy fallback.
 - Removed repeated count work from continuation requests, stopped recalculating already-materialized comment statistics for standard feeds, and added a compound community/Active index.
-- Migrated Home, Search, and Community to a shared cancellable cursor feed hook, added append deduplication and stale-cursor recovery, and expanded the matrix to 116 tests with browser coverage for concurrent inserts.
+- Migrated Home, Search, and Community to a shared cancellable cursor feed hook, added append deduplication and stale-cursor recovery, and expanded the matrix to 117 tests with browser coverage for concurrent inserts.
+- Fixed concurrent option loading and typing clearing the post form's default community; field updates now merge against current state, covered by a batched-update regression.
 - Fixed comment sorting reassigning descendants to the wrong parent after sibling replies changed order; added a regression for Newest and Top.
 - Overrode transitive `qs` to upstream 6.16.0 to resolve GHSA-x5fp-wj9c-mxmx and GHSA-4mjr-xmp4-gh2g while Express still requests an affected minor range.
 
