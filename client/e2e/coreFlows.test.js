@@ -27,7 +27,13 @@ async function createPost(page, { title, content, flair }) {
   if (flair) {
     await page.locator("#postNewFlair").fill(flair);
   }
+  const responsePromise = page.waitForResponse((response) => (
+    new URL(response.url()).pathname === "/api/posts" &&
+    response.request().method() === "POST"
+  ));
   await page.getByRole("button", { name: /submit/i }).click();
+  const response = await responsePromise;
+  expect(response.status(), await response.text()).toBe(201);
 
   await expect(page.getByRole("heading", { name: /all posts/i })).toBeVisible({
     timeout: navigationTimeout

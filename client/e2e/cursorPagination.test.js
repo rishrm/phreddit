@@ -14,7 +14,7 @@ async function createPost(request, csrfToken, communityId, title) {
       community: communityId
     }
   });
-  expect(response.ok()).toBe(true);
+  expect(response.status(), await response.text()).toBe(201);
 }
 
 test("Load more follows the opaque cursor without duplicates during an insert", async ({ page }) => {
