@@ -1,58 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { api } from "../api/client.js";
 import SortButtons from "../components/SortButtons.jsx";
 import PostList from "../components/PostList.jsx";
-
-const PAGE_SIZE = 20;
+import usePostFeed from "../hooks/usePostFeed.js";
 
 export default function Home() {
   const { user, showMessage, refreshCurrentUser, refreshToken } = useOutletContext();
-  const [posts, setPosts] = useState([]);
-  const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [flairs, setFlairs] = useState([]);
   const [selectedFlair, setSelectedFlair] = useState("");
   const [currentSort, setCurrentSort] = useState("newest");
-  const requestIdRef = useRef(0);
-
-  const load = useCallback(
-    async (targetPage, append, signal) => {
-      const requestId = ++requestIdRef.current;
-      try {
-        setLoading(true);
-        setError("");
-        const data = await api.getPosts({
-          linkFlair: selectedFlair || undefined,
-          sort: currentSort,
-          page: targetPage,
-          limit: PAGE_SIZE
-        }, { signal });
-        if (requestId !== requestIdRef.current) return;
-        setPosts((previous) =>
-          append ? [...previous, ...(data.posts || [])] : data.posts || []
-        );
-        setPage(data.page || targetPage);
-        setTotal(data.total ?? 0);
-        setHasMore(Boolean(data.hasMore));
-      } catch (loadError) {
-        if (loadError.name === "AbortError" || requestId !== requestIdRef.current) return;
-        setError(loadError.message);
-      } finally {
-        if (requestId === requestIdRef.current) setLoading(false);
-      }
-    },
-    [selectedFlair, currentSort]
-  );
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void load(1, false, controller.signal);
-    return () => controller.abort();
-  }, [load, refreshToken]);
+  const { posts, total, nextCursor, loading, error, retry, loadMore } = usePostFeed({
+    linkFlair: selectedFlair || undefined, sort: currentSort, refreshToken
+  });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -94,7 +54,7 @@ export default function Home() {
       {error && (
         <p className="error-state" role="alert">
           {error}{" "}
-          <button type="button" onClick={() => load(1, false)}>Retry</button>
+          <button type="button" onClick={retry}>Retry</button>
         </p>
       )}
       {loading && posts.length === 0 ? (
@@ -109,8 +69,8 @@ export default function Home() {
           />
         </div>
       )}
-      {hasMore && (
-        <button type="button" disabled={loading} onClick={() => load(page + 1, true)}>
+      {nextCursor && (
+        <button type="button" disabled={loading} onClick={loadMore}>
           {loading ? "Loading..." : "Load more posts"}
         </button>
       )}

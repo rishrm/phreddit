@@ -196,10 +196,14 @@ export function createApp({ useSessionStore = true } = {}) {
       message = "Internal server error.";
     }
 
-    res.status(status).json({
+    const payload = {
       error: message,
       requestId: req.requestId
-    });
+    };
+    if (status < 500 && error.exposeCode === true && typeof error.code === "string") {
+      payload.code = error.code;
+    }
+    res.status(status).json(payload);
   });
 
   return app;

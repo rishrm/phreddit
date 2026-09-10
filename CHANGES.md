@@ -1,5 +1,15 @@
 # Changelog — Portfolio Release
 
+## Cursor pagination pass
+- Replaced client-facing page offsets with versioned, opaque keyset cursors across Newest, Oldest, and Active listings, including deterministic `_id` tie-breaks and nullable activity timestamps.
+- Bound cursors to sort, filters, search, viewer membership priority, and joined-community state; malformed or cross-listing cursors return a stable `400` contract.
+- Preserved joined-community-first ordering across cursor boundaries, stabilized traversal under concurrent inserts, and retained `page` only as a deprecated rolling-deploy fallback.
+- Removed repeated count work from continuation requests, stopped recalculating already-materialized comment statistics for standard feeds, and added a compound community/Active index.
+- Migrated Home, Search, and Community to a shared cancellable cursor feed hook, added append deduplication and stale-cursor recovery, and expanded the matrix to 117 tests with browser coverage for concurrent inserts.
+- Fixed concurrent option loading and typing clearing the post form's default community; field updates now merge against current state, covered by a batched-update regression.
+- Fixed comment sorting reassigning descendants to the wrong parent after sibling replies changed order; added a regression for Newest and Top.
+- Overrode transitive `qs` to upstream 6.16.0 to resolve GHSA-x5fp-wj9c-mxmx and GHSA-4mjr-xmp4-gh2g while Express still requests an affected minor range.
+
 ## Final production pass
 - Added weighted cross-entity discovery for communities, public users, and link flairs alongside the existing indexed post/comment search, with safe bounded projections and browser-level coverage.
 - Added filterable moderation resolution history, preserving evidence, resolver identity, timestamps, and optional notes after reported content is deleted.
@@ -61,4 +71,4 @@
 - README, API contract, security policy, MIT license, Dependabot configuration, and agent invariants are aligned with the release.
 
 ## Intentionally deferred (documented as future work)
-TypeScript migration, cursor-based pagination, distributed rate limiting, and managed image uploads.
+TypeScript migration, distributed rate limiting, and managed image uploads.

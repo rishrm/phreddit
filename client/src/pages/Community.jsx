@@ -1,12 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { api } from "../api/client.js";
 import SortButtons from "../components/SortButtons.jsx";
 import PostCard from "../components/PostCard.jsx";
 import RichText from "../components/RichText.jsx";
 import { displayNameOfUser, formatDate } from "../utils/format.jsx";
-
-const PAGE_SIZE = 20;
+import usePostFeed from "../hooks/usePostFeed.js";
 
 export default function Community() {
   const { user, showMessage, refreshCurrentUser, refreshToken } = useOutletContext();
@@ -14,17 +13,13 @@ export default function Community() {
   const navigate = useNavigate();
 
   const [community, setCommunity] = useState(null);
-  const [posts, setPosts] = useState([]);
-  const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [communityLoading, setCommunityLoading] = useState(true);
   const [communityError, setCommunityError] = useState("");
-  const [postsError, setPostsError] = useState("");
   const [currentSort, setCurrentSort] = useState("newest");
   const [membershipPending, setMembershipPending] = useState(false);
-  const postsRequestRef = useRef(0);
+  const { posts, total, nextCursor, loading, error: postsError, retry, loadMore } = usePostFeed({
+    community: communityId, sort: currentSort, enabled: Boolean(communityId), refreshToken
+  });
 
   useEffect(() => {
     if (!communityId) return;
@@ -45,43 +40,6 @@ export default function Community() {
       });
     return () => controller.abort();
   }, [communityId, showMessage]);
-
-  const loadPosts = useCallback(
-    async (targetPage, append, signal) => {
-      if (!communityId) return;
-      const requestId = ++postsRequestRef.current;
-      try {
-        setLoading(true);
-        setPostsError("");
-        const data = await api.getPosts({
-          community: communityId,
-          sort: currentSort,
-          page: targetPage,
-          limit: PAGE_SIZE
-        }, { signal });
-        if (requestId !== postsRequestRef.current) return;
-        setPosts((previous) =>
-          append ? [...previous, ...(data.posts || [])] : data.posts || []
-        );
-        setPage(data.page || targetPage);
-        setTotal(data.total ?? 0);
-        setHasMore(Boolean(data.hasMore));
-      } catch (error) {
-        if (error.name === "AbortError" || requestId !== postsRequestRef.current) return;
-        setPostsError(error.message);
-        showMessage(error.message, "error");
-      } finally {
-        if (requestId === postsRequestRef.current) setLoading(false);
-      }
-    },
-    [communityId, currentSort, showMessage]
-  );
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadPosts(1, false, controller.signal);
-    return () => controller.abort();
-  }, [loadPosts, refreshToken]);
 
   const isJoined = Boolean(user && community?.isJoined);
 
@@ -158,7 +116,7 @@ export default function Community() {
       {postsError && (
         <p className="error-state" role="alert">
           {postsError}{" "}
-          <button type="button" onClick={() => loadPosts(1, false)}>Retry</button>
+          <button type="button" onClick={retry}>Retry</button>
         </p>
       )}
       <div className="list-column">
@@ -179,8 +137,8 @@ export default function Community() {
           ))
         )}
       </div>
-      {hasMore && (
-        <button type="button" disabled={loading} onClick={() => loadPosts(page + 1, true)}>
+      {nextCursor && (
+        <button type="button" disabled={loading} onClick={loadMore}>
           {loading ? "Loading..." : "Load more posts"}
         </button>
       )}

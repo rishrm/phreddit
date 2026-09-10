@@ -5,7 +5,7 @@
 
 Phreddit is a full-stack Reddit-inspired community forum built with React, Express, MongoDB, and Mongoose. It supports guest browsing, session-based accounts, communities, posts, link flair, arbitrary-depth threaded comments, saved posts, toggleable reputation-aware voting, live post updates over WebSockets, Markdown rendering, cross-entity discovery, public user profiles, reporting, and auditable admin moderation flows.
 
-The project is structured as a portfolio-ready MERN application with lazy client-side routes, server-side pagination and sorting, isolated backend integration tests, client unit tests, Playwright e2e coverage, and a CI pipeline.
+The project is structured as a portfolio-ready MERN application with lazy client-side routes, cursor-based server-side pagination and sorting, isolated backend integration tests, client unit tests, Playwright e2e coverage, and a CI pipeline that fails on flaky browser tests even when a retry succeeds.
 
 **Live demo:** [phreddit.vercel.app](https://phreddit.vercel.app)
 Visitors can browse as a guest or register a new account.
@@ -21,7 +21,7 @@ Visitors can browse as a guest or register a new account.
 - Guest browsing plus registration, login, logout, and persisted sessions
 - Client-side routing with real URLs and deep links (`/posts/:id`, `/communities/:id`, `/users/:id`, `/search?q=...`)
 - Live post pages: comments, votes, and edits from other users appear in real time over Socket.IO
-- Server-side pagination and sorting (Newest, Oldest, Active) with indexed, materialized comment activity and a Load More UI
+- Stable cursor pagination and server-side sorting (Newest, Oldest, Active) with indexed, materialized comment activity and a Load More UI
 - Unified discovery across posts, comments, communities, public users, and link flairs using weighted MongoDB text indexes
 - Toggleable voting: vote, unvote, or switch votes with atomic database updates; no self-voting; reputation deltas reverse correctly
 - Arbitrary-depth threaded comments assembled from one indexed query (with a 5,000-comment response guard), plus Newest/Top sorting
@@ -158,12 +158,12 @@ Server extras: `npm --prefix server run admin:promote` (explicit administrator p
 
 | Suite | Command | Needs MongoDB | CI job |
 |---|---|---|---|
-| Server unit (32 node:test tests) | `npm --prefix server run test:unit` | No | lint-and-unit |
-| Client unit (33 Vitest + RTL tests) | `npm --prefix client run test:unit` | No | lint-and-unit |
-| Server integration (33 supertest tests, disposable DB per data suite) | `npm run test:int` | Yes | integration |
-| End-to-end (4 Playwright browser flows) | `npm run test:e2e` | Yes | e2e |
+| Server unit (36 node:test tests) | `npm --prefix server run test:unit` | No | lint-and-unit |
+| Client unit (40 Vitest + RTL tests) | `npm --prefix client run test:unit` | No | lint-and-unit |
+| Server integration (36 supertest tests, disposable DB per data suite) | `npm run test:int` | Yes | integration |
+| End-to-end (5 Playwright browser flows) | `npm run test:e2e` | Yes | e2e |
 
-The current matrix contains 102 automated tests: 32 server unit, 33 server integration, 33 client unit, and 4 Playwright flows. Integration tests spin up Express in-process against throwaway databases and run in CI against a MongoDB replica set with transactions forced. Regression coverage includes session-bound CSRF enforcement, guest session avoidance, administrator recovery/session invalidation, DB-aware health, cross-entity discovery privacy, materialized Active-sort metadata and legacy backfills, membership-aware pagination, private vote serialization, authoritative cascade deletion, moderation history/claim races, and vote/reputation lifecycles. Playwright runs with CSRF enforcement enabled and covers desktop creation/profile/voting/discovery, a two-browser realtime check, and mobile keyboard/overflow behavior.
+The current matrix contains 117 automated tests: 36 server unit, 36 server integration, 40 client unit, and 5 Playwright flows. Integration tests spin up Express in-process against throwaway databases and run in CI against a MongoDB replica set with transactions forced. Regression coverage includes session-bound CSRF enforcement, guest session avoidance, administrator recovery/session invalidation, DB-aware health, cross-entity discovery privacy, materialized Active-sort metadata and legacy backfills, context-bound cursor traversal under concurrent inserts, membership-aware ordering, concurrent form initialization/typing, private vote serialization, authoritative cascade deletion, moderation history/claim races, and vote/reputation lifecycles. Playwright runs with CSRF enforcement enabled and covers cursor-backed Load More during a concurrent insert, desktop creation/profile/voting/discovery, a two-browser realtime check, and mobile keyboard/overflow behavior.
 
 Contributing with an AI coding agent? Repo commands and invariants live in [AGENTS.md](AGENTS.md).
 
@@ -220,7 +220,7 @@ On Render, add the two recovery-only values (`CONFIRM_ADMIN_PASSWORD_RESET` and 
 - **Voting:** vote add/remove/switch are single conditional `findOneAndUpdate` operations, so concurrent requests cannot double-count. `votedBy` is never sent to clients; each response carries only the caller's own `userVote`.
 - **Comments:** fetched flat with one indexed query (`{ post: 1, createdAt: -1 }`) and assembled iteratively in memory, so nesting depth is not truncated by recursive populate. A 5,000-comment response cap prevents unbounded memory use and is surfaced to the UI.
 - **Discovery:** post/comment search resolves matching ids first because `$text` cannot appear inside `$or`; a separate bounded endpoint uses weighted text indexes to return safe community, public-user, and flair matches without exposing member lists or email addresses.
-- **Listings:** pagination and all three sorts are computed database-side. `commentCount` and `latestCommentAt` are maintained with comment writes, recomputed after comment-tree deletion, and backfilled in bounded startup batches for legacy documents. Active ordering therefore avoids correlated lookups and uses a compound index for guest feeds. Page-number pagination is intentional at this scale; cursor pagination is the documented next step if feeds grow unbounded.
+- **Listings:** all three sorts and pagination boundaries are computed database-side. Versioned Base64URL cursors carry the final compound sort keys and are bound to the effective sort, filters, search, and joined-community ordering context. Lexicographic continuation predicates avoid deep `$skip`, remain stable when newer rows arrive, and use `_id` as the deterministic equal-time tie-breaker. Continuations fetch one extra key to detect another page and omit a repeated count query; `commentCount` and `latestCommentAt` are maintained with comment writes and indexed for Active ordering. A deprecated `page` fallback remains only for rolling-deploy compatibility.
 - **Delivery:** all API responses are `private, no-store` and carry a validated `X-Request-ID`; 500 responses surface that reference to the UI. Route-level code splitting reduced the measured initial production JavaScript from 357.3 kB (112.3 kB gzip) to 199.2 kB (65.7 kB gzip), with Markdown and heavier pages loaded on demand.
 - **Sessions:** stored in MongoDB via connect-mongo; hashes are excluded by default at the Mongoose schema boundary, session IDs regenerate on login, and missing-user login attempts perform the same bcrypt work as bad passwords. Guests do not allocate a session during read-only bootstrap; the client obtains a synchronizer token only before the first unsafe request and refreshes it once after expiration. Vercel proxies REST through same-origin `/api`, allowing `SameSite=Lax`; unsafe requests must also come from `CLIENT_ORIGIN`. Registration intentionally returns to Welcome before login. The `x-test-user-id` header is inert outside `NODE_ENV=test`.
 - **Transactions and cascade deletes:** supported replica sets use MongoDB transactions for votes, reputation, ownership references, memberships, moderation, and children-first cascade deletion. Standalone local MongoDB uses the same idempotent operations without a transaction; CI forces the replica-set path.
@@ -233,7 +233,7 @@ The REST surface and authorization rules are summarized in [docs/API.md](docs/AP
 The release branch includes fixes found through adversarial review rather than happy-path testing alone:
 
 - Active sorting is tested with multiple commented posts and uses the latest comment timestamp.
-- Joined-community priority is computed before pagination, so later pages cannot reorder the feed.
+- Joined-community priority is part of the cursor ordering key, so pagination crosses from joined to other communities without duplicates or reordering.
 - `votedBy` arrays are stripped from every post/comment response, including private profile endpoints.
 - Deleting a voter reverses their reputation impact before removing vote records.
 - User-content limits and Markdown hyperlink rules are enforced by both forms and the API.
@@ -245,7 +245,7 @@ The release branch includes fixes found through adversarial review rather than h
 
 ## Portfolio Talking Points
 
-- Migrated a state-machine UI to client-side routing with deep links, then moved sorting/pagination server-side so URLs, refreshes, and shared links all behave correctly.
+- Migrated a state-machine UI to client-side routing with deep links, then designed context-bound keyset pagination for all three server-side sorts, including nullable activity timestamps and per-user community priority.
 - Designed race-safe vote toggling with pure conditional updates instead of read-modify-write, and verified the reputation math with integration tests.
 - Replaced depth-limited nested populate with a capped flat fetch + iterative tree build, turning recursive population into one indexed comment query.
 - Added Socket.IO live updates with a no-op-in-tests emitter so the realtime layer never leaks into the test suite.

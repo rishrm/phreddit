@@ -78,9 +78,11 @@ const postSchema = new mongoose.Schema(
 );
 
 postSchema.index({ title: "text", content: "text" });
-postSchema.index({ community: 1, createdAt: -1 });
+postSchema.index({ community: 1, createdAt: -1, _id: -1 });
+postSchema.index({ community: 1, latestCommentAt: -1, createdAt: -1, _id: -1 });
 postSchema.index({ createdAt: -1, _id: -1 });
-postSchema.index({ linkFlair: 1, createdAt: -1 });
+postSchema.index({ linkFlair: 1, createdAt: -1, _id: -1 });
+postSchema.index({ linkFlair: 1, latestCommentAt: -1, createdAt: -1, _id: -1 });
 postSchema.index({ postedBy: 1, createdAt: -1 });
 postSchema.index({ latestCommentAt: -1, createdAt: -1, _id: -1 });
 postSchema.index({ "votedBy.user": 1 });

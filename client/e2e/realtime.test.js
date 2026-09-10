@@ -19,12 +19,17 @@ test("a comment appears live in another signed-in browser", async ({ page, brows
   await page.locator("#communityName").fill(communityName);
   await page.locator("#communityDescription").fill("Realtime test community.");
   await page.getByRole("button", { name: /submit/i }).click();
+  await expect(page).toHaveURL(/\/communities\/[a-f0-9]{24}$/);
+  await expect(page.getByRole("heading", { name: communityName })).toBeVisible();
   await page.getByRole("button", { name: /^home$/i }).first().click();
+  await expect(page.getByRole("heading", { name: /all posts/i })).toBeVisible();
   await page.getByRole("button", { name: /create post/i }).first().click();
   await page.locator("#postTitle").fill(postTitle);
   await page.locator("#postContent").fill("Watch this thread update without a refresh.");
   await page.getByRole("button", { name: /submit/i }).click();
   await page.getByRole("link", { name: postTitle }).click();
+  await expect(page).toHaveURL(/\/posts\/[a-f0-9]{24}$/);
+  await expect(page.getByRole("heading", { name: postTitle })).toBeVisible();
   const postUrl = page.url();
 
   const secondContext = await browser.newContext();

@@ -12,7 +12,7 @@ async function createCommunity(page, communityName, description = "Community cre
   await page.getByRole("button", { name: /submit/i }).click();
 
   // Creating a community lands on the new community page.
-  await expect(page).toHaveURL(/\/communities\//, { timeout: navigationTimeout });
+  await expect(page).toHaveURL(/\/communities\/[a-f0-9]{24}$/, { timeout: navigationTimeout });
   await expect(page.getByRole("heading", { name: communityName })).toBeVisible({
     timeout: navigationTimeout
   });
@@ -27,7 +27,13 @@ async function createPost(page, { title, content, flair }) {
   if (flair) {
     await page.locator("#postNewFlair").fill(flair);
   }
+  const responsePromise = page.waitForResponse((response) => (
+    new URL(response.url()).pathname === "/api/posts" &&
+    response.request().method() === "POST"
+  ));
   await page.getByRole("button", { name: /submit/i }).click();
+  const response = await responsePromise;
+  expect(response.status(), await response.text()).toBe(201);
 
   await expect(page.getByRole("heading", { name: /all posts/i })).toBeVisible({
     timeout: navigationTimeout
@@ -102,8 +108,7 @@ test("core flows: content creation, self-vote gate, sorting, profile, and two-us
   await page.getByRole("button", { name: /clear/i }).click();
   await page.getByRole("button", { name: "Active", exact: true }).click();
 
-  const titles = await page.locator(".post-card h3").allTextContents();
-  expect(titles[0]).toContain(activeTitle);
+  await expect(page.locator(".post-card h3").first()).toContainText(activeTitle);
 
   // Profile: edit the post title, check saved posts, then delete the comment
   // through the in-app confirm dialog (window.confirm was replaced).
