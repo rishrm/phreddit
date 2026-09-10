@@ -132,6 +132,8 @@ also `npm run test:e2e`, and update the specs in `client/e2e/` if flows moved.
   obtain a token from `/api/auth/csrf` and preserve the test session cookie.
 - Every e2e test resets only a database whose name begins with
   `phreddit_e2e`; never loosen the reset route or teardown name check.
+- CI fails on flaky browser tests even when a retry succeeds. Keep this gate;
+  fix state races and wait for observable outcomes rather than adding sleeps.
 
 ## Style
 

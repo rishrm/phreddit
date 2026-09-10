@@ -108,8 +108,7 @@ test("core flows: content creation, self-vote gate, sorting, profile, and two-us
   await page.getByRole("button", { name: /clear/i }).click();
   await page.getByRole("button", { name: "Active", exact: true }).click();
 
-  const titles = await page.locator(".post-card h3").allTextContents();
-  expect(titles[0]).toContain(activeTitle);
+  await expect(page.locator(".post-card h3").first()).toContainText(activeTitle);
 
   // Profile: edit the post title, check saved posts, then delete the comment
   // through the in-app confirm dialog (window.confirm was replaced).

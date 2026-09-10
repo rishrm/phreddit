@@ -5,7 +5,7 @@
 
 Phreddit is a full-stack Reddit-inspired community forum built with React, Express, MongoDB, and Mongoose. It supports guest browsing, session-based accounts, communities, posts, link flair, arbitrary-depth threaded comments, saved posts, toggleable reputation-aware voting, live post updates over WebSockets, Markdown rendering, cross-entity discovery, public user profiles, reporting, and auditable admin moderation flows.
 
-The project is structured as a portfolio-ready MERN application with lazy client-side routes, cursor-based server-side pagination and sorting, isolated backend integration tests, client unit tests, Playwright e2e coverage, and a CI pipeline.
+The project is structured as a portfolio-ready MERN application with lazy client-side routes, cursor-based server-side pagination and sorting, isolated backend integration tests, client unit tests, Playwright e2e coverage, and a CI pipeline that fails on flaky browser tests even when a retry succeeds.
 
 **Live demo:** [phreddit.vercel.app](https://phreddit.vercel.app)
 Visitors can browse as a guest or register a new account.
