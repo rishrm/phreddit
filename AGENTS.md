@@ -55,6 +55,14 @@ also `npm run test:e2e`, and update the specs in `client/e2e/` if flows moved.
   deletion must call `syncPostActivity()`. Keep the bounded startup backfill
   for documents created before these fields existed. Do not reintroduce a
   per-post `$lookup` into the Active listing pipeline.
+- Post listings use versioned keyset cursors from `server/utils/postCursor.js`.
+  Preserve the compound Newest/Oldest/Active ordering, `_id` tie-breakers,
+  nullable Active semantics, joined-community rank, and listing-context hash.
+  Continuations fetch `limit + 1` and do not recount totals. Do not reintroduce
+  `$skip` except in the deprecated `page` compatibility path.
+- Home, Search, and Community share `usePostFeed`. Cancel outstanding requests
+  on context changes/unmount, retain the first-window count, deduplicate IDs,
+  and offer a fresh first-window retry after `INVALID_POST_CURSOR`.
 - View counts increment only via `POST /api/posts/:id/view`. GETs stay
   idempotent.
 - The `x-test-user-id` header is honored ONLY when `NODE_ENV === "test"`
@@ -124,6 +132,10 @@ also `npm run test:e2e`, and update the specs in `client/e2e/` if flows moved.
   `phreddit_e2e`; never loosen the reset route or teardown name check.
 
 ## Style
+
+`server/package.json` pins the transitive `qs` override to 6.16.0 for
+GHSA-x5fp-wj9c-mxmx and GHSA-4mjr-xmp4-gh2g. Remove the override only when the
+Express/body-parser/Supertest dependency graph resolves a patched version itself.
 
 ESM everywhere. 2-space indent, double quotes, semicolons (ESLint enforces).
 Keep server route handlers thin; shared logic goes in `server/utils/`.

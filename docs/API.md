@@ -3,7 +3,8 @@
 All endpoints are rooted at `/api`. Browser requests use a signed, HTTP-only
 session cookie. Every response is marked `Cache-Control: private, no-store` and
 includes a bounded `X-Request-ID`. JSON errors have the shape
-`{ "error": "message" }`; registration validation may return
+`{ "error": "message", "requestId": "..." }`; selected recoverable client
+errors also include a stable `code`. Registration validation may return
 `{ "errors": ["message"] }`, and unhandled server errors also include the
 request ID used by structured server logs.
 
@@ -70,13 +71,32 @@ reputation; flair results include only their public label.
 | PUT/DELETE | `/comments/:id` | Owner/Admin | Edit or cascade-delete |
 | POST | `/comments/:id/vote` | Eligible user | Add, remove, or switch a vote |
 
-`GET /posts` accepts `page`, `limit`, `sort=newest|oldest|active`, `community`,
-`linkFlair`, and `search`. Authenticated feeds prioritize joined communities
-before applying page boundaries. Vote histories are never serialized; responses
+`GET /posts` accepts `cursor`, `limit` (1-50),
+`sort=newest|oldest|active`, `community`, `linkFlair`, and `search`. Omit
+`cursor` for the first request; pass the opaque `nextCursor` unchanged to load
+the next window. The initial response includes `total`; continuation responses
+avoid recounting and omit it. `hasMore` and `nextCursor` indicate whether
+another window exists. A deprecated `page` parameter remains temporarily for
+rolling-deploy compatibility and cannot be combined with `cursor`.
+
+Cursors are versioned, strictly decoded, and bound to the effective sort,
+filters, search, and membership-priority context. Reusing one for a different
+listing returns `400` with code `INVALID_POST_CURSOR`. They are pagination
+positions, not authorization tokens. Authenticated home/search feeds prioritize
+joined communities before applying cursor boundaries; a community-scoped feed
+skips that redundant rank. Vote histories are never serialized; responses
 contain only `userVote` for the caller. Search resolves at most 5,000 matching
 post ids and returns `searchTruncated=true` if more exist. Detailed post
 responses include at most 5,000 comments and return `commentsTruncated=true`
 when the guard is reached.
+
+These are live listings, not database snapshots. Newest/Oldest boundaries stay
+stable while new posts are inserted or the anchor post is deleted, but new
+matches after the boundary can still appear. Active activity keys can move
+when comments are added or deleted; a moved post can be missed until refresh
+or returned twice. The client deduplicates appended IDs and refreshes from the
+first window when the sort, filters, or membership change. `total` is the count
+at the initial request, not a continuously updated count.
 
 ## Profiles and Moderation
 

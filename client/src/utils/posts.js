@@ -50,6 +50,22 @@ export function splitPostsByMembership(posts, user) {
   return { joinedPosts, otherPosts };
 }
 
+export function appendUniquePosts(previousPosts, incomingPosts) {
+  const combined = [...(previousPosts || [])];
+  const seenIds = new Set(
+    combined.map((post) => String(post?._id || "")).filter(Boolean)
+  );
+
+  for (const post of incomingPosts || []) {
+    const id = String(post?._id || "");
+    if (id && seenIds.has(id)) continue;
+    combined.push(post);
+    if (id) seenIds.add(id);
+  }
+
+  return combined;
+}
+
 function scoreOf(comment) {
   return (comment.upvotes ?? 0) - (comment.downvotes ?? 0);
 }
@@ -74,12 +90,14 @@ export function sortComments(comments, mode = "newest") {
   while (stack.length > 0) {
     const { source, target } = stack.pop();
     const sourceReplies = Array.isArray(source?.replies) ? source.replies : [];
-    const targetReplies = sourceReplies.map((reply) => ({ ...reply, replies: [] }));
+    const replyPairs = sourceReplies.map((reply) => ({
+      source: reply,
+      target: { ...reply, replies: [] }
+    }));
+    const targetReplies = replyPairs.map(({ target: reply }) => reply);
     targetReplies.sort(compare);
     target.replies = targetReplies;
-    for (let index = 0; index < sourceReplies.length; index += 1) {
-      stack.push({ source: sourceReplies[index], target: targetReplies[index] });
-    }
+    stack.push(...replyPairs);
   }
 
   return roots;

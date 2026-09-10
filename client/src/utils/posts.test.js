@@ -1,11 +1,27 @@
 import { describe, expect, it } from "vitest";
 import {
+  appendUniquePosts,
   commentCountOf,
   flattenComments,
   isPostSavedByUser,
   sortComments,
   splitPostsByMembership
 } from "./posts.js";
+
+describe("appendUniquePosts", () => {
+  it("preserves order while dropping repeated ids across page boundaries", () => {
+    const previous = [{ _id: "one" }, { _id: "two", title: "Earlier" }];
+    const incoming = [{ _id: "two", title: "Repeated" }, { _id: "three" }];
+
+    expect(appendUniquePosts(previous, incoming)).toEqual([
+      { _id: "one" },
+      { _id: "two", title: "Earlier" },
+      { _id: "three" }
+    ]);
+    expect(previous).toHaveLength(2);
+    expect(incoming).toHaveLength(2);
+  });
+});
 
 describe("commentCountOf", () => {
   it("prefers the server-computed commentCount", () => {
@@ -89,6 +105,19 @@ describe("sortComments", () => {
     const before = JSON.stringify(tree);
     sortComments(tree, "top");
     expect(JSON.stringify(tree)).toBe(before);
+  });
+
+  it("keeps descendants attached to their parent when sibling replies reorder", () => {
+    const nested = [{ _id: "root", replies: [
+      { _id: "low", upvotes: 1, createdAt: "2025-01-01", replies: [{ _id: "low-child", replies: [] }] },
+      { _id: "high", upvotes: 5, createdAt: "2025-02-01", replies: [{ _id: "high-child", replies: [] }] }
+    ] }];
+    for (const mode of ["newest", "top"]) {
+      const sorted = sortComments(nested, mode)[0].replies;
+      expect(sorted.map((reply) => [reply._id, reply.replies[0]._id])).toEqual([
+        ["high", "high-child"], ["low", "low-child"]
+      ]);
+    }
   });
 
   it("sorts and flattens very deep threads without recursive stack overflow", () => {

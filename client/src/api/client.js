@@ -145,7 +145,7 @@ export const api = {
     if (params.linkFlair) query.set("linkFlair", params.linkFlair);
     if (params.search) query.set("search", params.search);
     if (params.sort) query.set("sort", params.sort);
-    if (params.page) query.set("page", String(params.page));
+    if (params.cursor) query.set("cursor", params.cursor);
     if (params.limit) query.set("limit", String(params.limit));
     const suffix = query.toString() ? `?${query.toString()}` : "";
     return request(`/posts${suffix}`, options);

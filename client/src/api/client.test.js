@@ -19,6 +19,26 @@ afterEach(() => {
 });
 
 describe("API CSRF handling", () => {
+  it("serializes opaque post cursors without exposing page offsets", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ posts: [] }));
+    const api = await loadApiWithFetch(fetchMock);
+
+    await api.getPosts({
+      search: "cursor pagination",
+      sort: "active",
+      cursor: "opaque_cursor-1",
+      limit: 20
+    });
+
+    const url = new URL(fetchMock.mock.calls[0][0], "https://example.test");
+    expect(url.pathname).toBe("/api/posts");
+    expect(url.searchParams.get("cursor")).toBe("opaque_cursor-1");
+    expect(url.searchParams.get("search")).toBe("cursor pagination");
+    expect(url.searchParams.get("sort")).toBe("active");
+    expect(url.searchParams.get("limit")).toBe("20");
+    expect(url.searchParams.has("page")).toBe(false);
+  });
+
   it("does not persist a guest session until an unsafe request needs a token", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({ user: null }))

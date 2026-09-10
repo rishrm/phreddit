@@ -52,6 +52,19 @@ The optimized design stores `commentCount` and `latestCommentAt` on each Post:
 - Active ordering uses the compound
   `{ latestCommentAt: -1, createdAt: -1, _id: -1 }` index.
 
+A later pagination pass replaced deep page offsets with compound keyset
+predicates for Newest, Oldest, and Active. Continuation requests fetch one
+extra ordering key to determine `hasMore`, skip repeated total counts, and bind
+the opaque cursor to the listing context. Community-scoped Active feeds use a
+matching `{ community: 1, latestCommentAt: -1, createdAt: -1, _id: -1 }`
+index; flair filters have the equivalent index with a `linkFlair` prefix.
+Joined-community ranking in a mixed authenticated feed still computes a rank
+over candidates, so its work is not bounded to one page. Search still resolves
+up to 5,000 matching IDs before ordering. Cursors remove deep offset scans but
+do not make those paths constant-time or provide snapshot isolation.
+The recorded results above predate this pagination pass and are retained
+as the reproducible evidence for the materialized-activity change only.
+
 For a 20-result guest query, MongoDB's execution plan used the compound index,
 examined 20 keys, and examined zero post documents while selecting the ordered
 IDs. The API then hydrated only those 20 posts.
@@ -78,3 +91,5 @@ Results vary with hardware, dataset shape, runtime versions, and background
 load. These figures do not mean the system supports 1,000 simultaneous users;
 production capacity requires a separate test through the deployed network and
 database topology.
+
+The cursor design follows MongoDB's [range-query pagination guidance](https://www.mongodb.com/docs/manual/reference/method/cursor.skip/#using-range-queries), with additional compound keys for activity and membership priority.
