@@ -1,6 +1,6 @@
 # AGENTS.md — instructions for AI coding agents
 
-Phreddit is a MERN Reddit clone: `client/` (React 18 + Vite + react-router) and
+Phreddit is a community discussion app: `client/` (React 18 + Vite + react-router) and
 `server/` (Express 4 + Mongoose 8 + Socket.IO), session auth via
 express-session + connect-mongo. Node 20+.
 
@@ -136,6 +136,10 @@ also `npm run test:e2e`, and update the specs in `client/e2e/` if flows moved.
   fix state races and wait for observable outcomes rather than adding sleeps.
 
 ## Style
+
+Describe Phreddit as a standalone application. Public documentation and repository
+descriptions should explain its features, architecture, and operation. Keep career
+positioning and interview talking points out of product documentation.
 
 `server/package.json` pins the transitive `qs` override to 6.16.0 for
 GHSA-x5fp-wj9c-mxmx and GHSA-4mjr-xmp4-gh2g. Remove the override only when the

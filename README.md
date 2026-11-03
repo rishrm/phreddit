@@ -3,12 +3,11 @@
 [![CI](https://github.com/rishrm/phreddit/actions/workflows/ci.yml/badge.svg)](https://github.com/rishrm/phreddit/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Phreddit is a full-stack Reddit-inspired community forum built with React, Express, MongoDB, and Mongoose. It supports guest browsing, session-based accounts, communities, posts, link flair, arbitrary-depth threaded comments, saved posts, toggleable reputation-aware voting, live post updates over WebSockets, Markdown rendering, cross-entity discovery, public user profiles, reporting, and auditable admin moderation flows.
+Phreddit is a community discussion app with threaded conversations, live updates, voting, saved posts, and moderation tools. Create communities, share posts, and find discussions through full-text search and flair filters.
 
-The project is structured as a portfolio-ready MERN application with lazy client-side routes, cursor-based server-side pagination and sorting, isolated backend integration tests, client unit tests, Playwright e2e coverage, and a CI pipeline that fails on flaky browser tests even when a retry succeeds.
+Browse as a guest or create an account to post, comment, vote, and save discussions. Comments, votes, and post edits update live for everyone viewing a thread.
 
-**Live demo:** [phreddit.vercel.app](https://phreddit.vercel.app)
-Visitors can browse as a guest or register a new account.
+**Open Phreddit:** [phreddit.vercel.app](https://phreddit.vercel.app)
 
 ## Screenshots
 
@@ -80,11 +79,11 @@ npm run install:all
 # 2) Configure the server
 cp server/.env.example server/.env   # edit values as needed
 
-# 3) (Optional) seed demo data into the named database (destructive)
+# 3) (Optional) seed sample data into the named database (destructive)
 ADMIN_PASSWORD='AdminPass123!' DEMO_PASSWORD='DemoPass123!' \
 CONFIRM_DATABASE_RESET=phreddit node server/init.js admin@example.com adminuser
 
-# Assignment-compatible shorthand for the default local phreddit database
+# Local shorthand for the default phreddit database only
 node server/init.js admin@example.com adminuser 'AdminPass123!'
 
 # 4) Run the API (http://localhost:8000)
@@ -96,7 +95,7 @@ npm --prefix client run dev
 
 The Vite dev server proxies both `/api` and the `/socket.io` WebSocket to the API, so no client env vars are needed locally.
 
-## Demo Accounts
+## Sample Accounts
 
 The optional seed command creates one administrator plus three sample users. Remote/custom-database seeds require environment secrets and explicit reset confirmation; the three-argument shorthand is accepted only for the default local `phreddit` database. Passwords are never printed.
 
@@ -107,7 +106,7 @@ The optional seed command creates one administrator plus three sample users. Rem
 | User | `jamie@example.com` | `DEMO_PASSWORD` |
 | User | `taylor@example.com` | `DEMO_PASSWORD` |
 
-`server/init.js` erases the selected database. It requires `CONFIRM_DATABASE_RESET` to exactly match the database name except in the assignment-compatible default-local mode shown above.
+`server/init.js` erases the selected database. It requires `CONFIRM_DATABASE_RESET` to exactly match the database name except in the default-local shorthand shown above.
 
 ## Environment Variables
 
@@ -169,7 +168,7 @@ Contributing with an AI coding agent? Repo commands and invariants live in [AGEN
 
 ## Benchmarks
 
-To produce a defensible throughput/latency number for the listing endpoint:
+To measure post-listing throughput and latency against an isolated dataset:
 
 ```bash
 # Terminal 1 — seed and serve a volume dataset
@@ -228,9 +227,9 @@ On Render, add the two recovery-only values (`CONFIRM_ADMIN_PASSWORD_RESET` and 
 
 The REST surface and authorization rules are summarized in [docs/API.md](docs/API.md). Security reporting and supported-version information live in [SECURITY.md](SECURITY.md).
 
-## Reliability and Security Review
+## Reliability and Security
 
-The release branch includes fixes found through adversarial review rather than happy-path testing alone:
+Regression tests cover the following security, accessibility, and data-consistency behaviors:
 
 - Active sorting is tested with multiple commented posts and uses the latest comment timestamp.
 - Joined-community priority is part of the cursor ordering key, so pagination crosses from joined to other communities without duplicates or reordering.
@@ -243,21 +242,9 @@ The release branch includes fixes found through adversarial review rather than h
 - Database health fails closed with `503`, while request IDs connect user-visible 500 references to structured server logs.
 - Destructive dialogs trap and restore focus; profile tabs support arrow, Home, and End keys.
 
-## Portfolio Talking Points
+## Maintainer
 
-- Migrated a state-machine UI to client-side routing with deep links, then designed context-bound keyset pagination for all three server-side sorts, including nullable activity timestamps and per-user community priority.
-- Designed race-safe vote toggling with pure conditional updates instead of read-modify-write, and verified the reputation math with integration tests.
-- Replaced depth-limited nested populate with a capped flat fetch + iterative tree build, turning recursive population into one indexed comment query.
-- Added Socket.IO live updates with a no-op-in-tests emitter so the realtime layer never leaks into the test suite.
-- Closed a test-only auth header behind `NODE_ENV=test` after identifying it as a production auth bypass during a security review.
-- Added layered request security after CodeQL review: global throttling, session-bound synchronizer tokens, strict unsafe-request origin checks, linear-time validators, and explicit database-query normalization.
-- Cut the initial JavaScript payload by 44% through route-level lazy loading, while adding a recoverable render boundary for failed chunks or unexpected component errors.
-- Built one discovery experience over separate indexed data contracts, preserving private user/community fields and keeping post pagination independent from lightweight entity matches.
-- Replaced Active sort's correlated per-post comment aggregation with transactionally materialized activity metadata and an indexed ordering path, improving the measured local profile from 40 to 947-1,000 req/s while cutting p99 by at least 94%.
-
-## Assignment Contribution
-
-**Rishabh Mittal** designed and implemented the complete project: React interface and routing, Express/Mongoose API, session authentication, MongoDB models and cascade deletion, voting/reputation logic, Socket.IO updates, moderation and admin workflows, automated tests, CI, deployment configuration, documentation, and the final accessibility/security review.
+[Rishabh Mittal](https://github.com/rishrm)
 
 ## License
 

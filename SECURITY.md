@@ -39,6 +39,6 @@ quickly as possible and credited when appropriate.
 - Production startup requires `SESSION_SECRET`; secrets belong in hosting
   environment variables and must never be committed.
 - Remote/custom-database seed passwords are required secret inputs and reset
-  confirmation is explicit. The assignment's three-argument seed shorthand is
+  confirmation is explicit. The three-argument local seed shorthand is
   accepted only for the default local `phreddit` database; passwords are never
   printed to logs.

@@ -1,4 +1,4 @@
-# Changelog — Portfolio Release
+# Changelog
 
 ## Cursor pagination pass
 - Replaced client-facing page offsets with versioned, opaque keyset cursors across Newest, Oldest, and Active listings, including deterministic `_id` tie-breaks and nullable activity timestamps.
