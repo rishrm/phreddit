@@ -28,7 +28,7 @@
     "express-rate-limit": "^8.6.2",
     "express-session": "^1.18.0",
     "helmet": "^8.3.0",
-    "mongoose": "^8.24.4",
+    "mongoose": "^8.24.7",
     "socket.io": "^4.8.3"
   },
   "devDependencies": {
